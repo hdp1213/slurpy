@@ -11,6 +11,7 @@ setup(name='slurpy',
       install_requires=[
           'numpy',
           'pandas',
+          'pytest',
       ],
       entry_points={
           'console_scripts': ['query-jobs=slurpy.command_line:query_jobs'],
