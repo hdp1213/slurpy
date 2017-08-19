@@ -1,3 +1,5 @@
+import csv
+import io
 import re
 import subprocess
 
@@ -59,6 +61,8 @@ JOB_FMT = {'ACCOUNT'          : r'%a',
            'WORK_DIR'         : r'%Z'
           }
 
+JOB_DELIM = '|'
+
 JOB_STATES = {'PENDING', 'RUNNING', 'SUSPENDED',  'CANCELLED',  'COMPLETING',  'COMPLETED', 'CONFIGURING', 'FAILED', 'TIMEOUT', 'PREEMPTED', 'NODE_FAIL', 'REVOKED', 'SPECIAL_EXIT', 'BOOT_FAIL', 'STOPPED'}
 
 JOB_STS = {'PD', 'R', 'S', 'CA', 'CF', 'CG', 'CD', 'F', 'TO', 'PR', 'NF', 'RV', 'SE', 'BF', 'ST'} # no COMPLETING?
@@ -68,16 +72,22 @@ NODE_STATES = {'UNKNOWN', 'DOWN', 'IDLE', 'ALLOCATED', 'ERROR', 'MIXED', 'FUTURE
 
 # 211ms ± 13.3ms per loop
 def query_nodes(node_features, partition=None):
+    """Use scontrol to query node features.
+
+    Returns DataFrame of node features."""
     raw_scontrol = _query_scontrol()
     return _extract_node_features(raw_scontrol, node_features)
 
 
-def query_jobs(job_features, partition=None):
-    job_format = ','.join([JOB_FMT[feat.upper()]
-                           for feat in job_features])
+def query_jobs(job_properties, partition=None):
+    """Use squeue to query job properties.
+
+    Returns DataFrame of job properties."""
+    job_format = JOB_DELIM.join([JOB_FMT[prop.upper()]
+                           for prop in job_properties])
     raw_squeue = _query_squeue(job_format, partition)
 
-    return raw_squeue
+    return _extract_job_data(raw_squeue)
 
 
 # Really only here to keep _extract_node_features() in check
@@ -105,7 +115,12 @@ def _extract_node_features(raw_scontrol, features):
 
 
 def _extract_job_data(raw_squeue):
-    raw_squeue.splitlines()
+    sstream = io.StringIO(raw_squeue)
+    reader = csv.reader(sstream, delimiter=JOB_DELIM)
+    header = next(reader)
+
+    return pd.DataFrame(data=np.array([row for row in reader]),
+                        columns=header)
 
 
 def _query_squeue(form, partition=None):
