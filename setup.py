@@ -8,4 +8,11 @@ setup(name='slurpy',
       author_email='hdp1213@hotmail.com',
       license='MIT',
       packages=['slurpy'],
+      install_requires=[
+          'numpy',
+          'pandas',
+      ],
+      entry_points={
+          'console_scripts': ['query-jobs=slurpy.command_line:query_jobs'],
+      },
       zip_safe=False)

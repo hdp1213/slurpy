@@ -75,15 +75,7 @@ def query_nodes(node_features, partition=None):
 def query_jobs(job_features, partition=None):
     job_format = ','.join([JOB_FMT[feat.upper()]
                            for feat in job_features])
-
-    if partition:
-        squeue_cmd = ['squeue', '-p', partition, '-o', job_format]
-    else:
-        squeue_cmd = ['squeue', '-o', job_format]
-
-    raw_squeue = subprocess.check_output(squeue_cmd) \
-                           .decode(DECODE_FORMAT) \
-                           .splitlines()
+    raw_squeue = _query_squeue(job_format, partition)
 
     return raw_squeue
 
@@ -112,8 +104,20 @@ def _extract_node_features(raw_scontrol, features):
                         columns=features)
 
 
-def _extract_job_data():
-    pass
+def _extract_job_data(raw_squeue):
+    raw_squeue.splitlines()
+
+
+def _query_squeue(form, partition=None):
+    if partition:
+        squeue_cmd = ['squeue', '-p', partition, '-o', form]
+    else:
+        squeue_cmd = ['squeue', '-o', form]
+
+    raw_squeue = subprocess.check_output(squeue_cmd) \
+                           .decode(DECODE_FORMAT)
+
+    return raw_squeue
 
 
 def _query_scontrol():
