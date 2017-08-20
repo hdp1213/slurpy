@@ -1,4 +1,4 @@
-from .slurm import query_nodes, query_jobs, NODE_STATES
+from .slurm import query_nodes, query_jobs
 
 import numpy as np
 import pandas as pd
@@ -19,34 +19,23 @@ JOB_FEATURES = ['JOBID',
                 'NODES',
                 'NODELIST',
                 'ST',
-                'SUBMIT_TIME']
+                'SUBMIT_TIME',
+                'TIME']
 
-
-def main():
-    node_df = query_nodes(NODE_FEATURES)
-
-    print(filter_node_states(node_df, ['DOWN'], exclude=True))
-
-
-def filter_node_states(node_df, states, exclude=False):
+def filter_df(df, column, patterns, exclude=False):
     """Filter nodes depending on their current state.
 
     Returns a new DataFrame with filtered nodes."""
-    for state in states:
-        if state.upper() not in NODE_STATES:
-            raise ValueError('{} not valid state'.format(state.upper()))
+    cond_patts = '|'.join(['{}'.format(patt) for patt in patterns])
+    regex = r'.*({}).*'.format(cond_patts)
 
-    cond_states = '|'.join(['{}'.format(state.upper())
-                            for state in states])
-    regex = r'.*({}).*'.format(cond_states)
-
-    excl_states = node_df['State'].str.extract(regex, expand=False) \
-                                  .isnull()
+    excl_states = df[column].str.extract(regex, expand=False) \
+                                .isnull()
 
     if exclude:
-        return node_df[excl_states].copy()
+        return df[excl_states].copy()
     else:
-        return node_df[~excl_states].copy()
+        return df[~excl_states].copy()
 
 
 def get_node_df(node_features=NODE_FEATURES):
@@ -76,7 +65,11 @@ def _clean_node_df(node_df):
 def _clean_job_df(job_df):
     job_df['CPUS'] = job_df['CPUS'].astype(int)
     job_df['NODES'] = job_df['NODES'].astype(int)
+    job_df['NODELIST'] = np.where(job_df['NODELIST'] == '',
+                                  np.nan,
+                                  job_df['NODELIST'])
     job_df['SUBMIT_TIME'] = pd.to_datetime(job_df['SUBMIT_TIME'])
+    # job_df['TIME'] = pd.to_datetime(job_df['TIME'])
 
     return job_df
 
