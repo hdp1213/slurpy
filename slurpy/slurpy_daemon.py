@@ -15,6 +15,7 @@ CONFIG_ROOT = '~/.config/slurpyd.ini'
 
 MAIN_LOG = 'slurpyd'
 NODE_LOG = 'slurpyd.NodeTrack'
+MRGE_LOG = 'slurpyd.NodeMerge'
 JOBS_LOG = 'slurpyd.JobOrders'
 
 R_NODES = r'r[1-4]n[0-9]{2}'
@@ -46,7 +47,7 @@ def main():
 
     nlog.info("Saving nodes to directory {}", node_config['output'])
 
-    scheduler.add_job(write_nodes, 'cron',
+    scheduler.add_job(node_track, 'cron',
                       max_instances=2,
                       **get_cron_freq(node_config),
                       args=[node_config])
@@ -54,7 +55,7 @@ def main():
     scheduler.start()
 
 
-def write_nodes(node_config):
+def node_track(node_config):
     nlog = get_slurpyd_logger(NODE_LOG)
 
     nlog.info("Querying SLURM nodes")
@@ -67,20 +68,27 @@ def write_nodes(node_config):
     nlog.debug("Querying took {:.4} s", node_time)
 
     node_time = clock()
-    rnode_df = slurpy.filter_df(raw_node_df,
-                                column='NodeName',
-                                patterns=[R_NODES])
+    rnode_df = raw_node_df.groupby('HOSTNAMES') \
+                          .apply(_keep_first) \
+                          .reset_index(drop=True)
     node_time = clock() - node_time
 
-    nlog.debug("Filtering took {:.4} s", node_time)
+    nlog.debug("Regrouping took {:.4} s", node_time)
 
     rnodes_path = path_join(node_config['output'], node_filename)
 
     nlog.info("Saving node state as {}", node_filename)
+
     try:
         rnode_df.to_pickle(rnodes_path)
     except FileNotFoundError:
         nlog.exception("Saving to {} failed:", node_config['output'])
+
+
+def node_merge(node_config):
+    nmlog = get_slurpyd_logger(MRGE_LOG)
+
+    nmlog.info("Merging ")
 
 
 def setup_loggers(args, log_config):
@@ -148,9 +156,13 @@ def make_parser():
 
     parser.add_argument('--version',
                         action='version',
-                        version='%(prog)s v0.1')
+                        version='%(prog)s v0.2')
 
     return parser
+
+
+def _keep_first(x):
+    return x.iloc[0]
 
 
 class FormatAdapter(logging.LoggerAdapter):

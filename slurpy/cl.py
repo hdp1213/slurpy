@@ -2,12 +2,17 @@ import slurpy
 
 
 def query_jobs():
-    jobs = slurpy.get_job_df()
+    jobs = slurpy.get_job_df(partition='cpu')
     jobs['JOBS'] = 1
-    print(jobs.groupby('ST').sum())
+    print(jobs.groupby('State').sum())
+
+    return 0
 
 
 def query_nodes():
-    nodes = slurpy.get_node_df()
-    nodes['Nodes'] = 1
-    print(nodes.groupby('State').sum())
+    nodes = slurpy.get_node_df(partition='cpu')
+    nodes['NODES'] = 1
+    del nodes['MEMORY']
+    print(nodes.groupby('STATE').sum())
+
+    return 0

@@ -1,4 +1,5 @@
-from .slurm import _extract_node_feature, _extract_node_features
+from .slurm import _extract_scontrol_feature, _extract_scontrol_features
+from .cl import *
 
 from numpy import all as np_all
 
@@ -112,8 +113,8 @@ RAW_SCONTROL_LEN = 10
 
 @pytest.mark.parametrize('node_feat', NODE_FEATURES)
 def test_compare_extraction(node_feat):
-    cpu_alloc = _extract_node_feature(RAW_SCONTROL, node_feat)
-    node_info = _extract_node_features(RAW_SCONTROL, [node_feat])
+    cpu_alloc = _extract_scontrol_feature(RAW_SCONTROL, node_feat)
+    node_info = _extract_scontrol_features(RAW_SCONTROL, [node_feat])
 
     assert len(cpu_alloc) == RAW_SCONTROL_LEN
     assert len(cpu_alloc) == len(node_info)
@@ -121,7 +122,15 @@ def test_compare_extraction(node_feat):
     assert np_all(cpu_alloc == node_info[node_feat].values)
 
 
-def test_extract_node_features():
-    node_info = _extract_node_features(RAW_SCONTROL, NODE_FEATURES)
+def test_extract_scontrol_features():
+    node_info = _extract_scontrol_features(RAW_SCONTROL, NODE_FEATURES)
 
     assert len(node_info) == RAW_SCONTROL_LEN
+
+
+def test_query_jobs():
+    assert query_jobs() == 0
+
+
+def test_query_nodes():
+    assert query_nodes() == 0

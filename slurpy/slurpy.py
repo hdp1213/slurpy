@@ -1,32 +1,43 @@
 from .slurm import query_nodes, query_jobs
 
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 
-NODE_FEATURES = ['NodeName',
-                 'CPUAlloc',
-                 'CPUErr',
-                 'CPUTot',
-                 'RealMemory',
+NODE_FEATURES = ['NodeHost',
+                 'StateCompact',
+                 'CPUsState',
+                 'Memory',
                  'AllocMem',
-                 'FreeMem',
-                 'State']
+                 'FreeMem']
 
-JOB_FEATURES = ['JOBID',
-                'PARTITION',
-                'ACCOUNT',
-                'CPUS',
-                'NODES',
-                'NODELIST',
-                'ST',
-                'SUBMIT_TIME',
-                'TIME']
+JOB_FEATURES = ['JobID',
+                'State',
+                'ReqCPUS',
+                'AllocCPUS',
+                'AllocNodes',
+                'NodeList',
+                'NTasks',
+                'Submit',
+                'Start',
+                'ElapsedRaw',
+                'CPUTimeRAW',
+                'MaxRSS',
+                'ReqMem']
+
+CPU_PAT = '(?P<cpus>[0-9]+)/?'
+
+ALLOC = 0
+IDLE = 1
+OTHER = 2
+TOTAL = 3
 
 
 def filter_df(df, column, patterns, exclude=False):
-    """Filter nodes depending on their current state.
+    """Filter DataFrame on a column.
 
-    Returns a new DataFrame with filtered nodes."""
+    Returns a new DataFrame with filtered entries."""
     cond_patts = '|'.join(['{}'.format(patt) for patt in patterns])
     regex = r'.*({}).*'.format(cond_patts)
 
@@ -39,40 +50,55 @@ def filter_df(df, column, patterns, exclude=False):
         return df[~excl_states].copy()
 
 
-def get_node_df(node_features=NODE_FEATURES):
-    raw_node_df = query_nodes(node_features)
+def get_node_df(node_features=NODE_FEATURES, partition=None):
+    raw_node_df = query_nodes(node_features,
+                              partition=partition)
     return _clean_node_df(raw_node_df)
 
 
-def get_job_df(job_features=JOB_FEATURES):
-    raw_job_df = query_jobs(job_features)
+def get_job_df(job_features=JOB_FEATURES, partition=None, state=None):
+    today = datetime.now().strftime('%Y-%m-%d')
+    raw_job_df = query_jobs(job_features,
+                            partition=partition,
+                            start_time=today,
+                            state=state)
     return _clean_job_df(raw_job_df)
 
 
 def _clean_node_df(node_df):
-    node_df['CPUAlloc'] = node_df['CPUAlloc'].astype(int)
-    node_df['CPUErr'] = node_df['CPUErr'].astype(int)
-    node_df['CPUTot'] = node_df['CPUTot'].astype(int)
+    cpu_aiot = _split_aiot(node_df['CPUS(A/I/O/T)'])
+    del node_df['CPUS(A/I/O/T)']
 
-    node_df['RealMemory'] = node_df['RealMemory'].astype(int)
-    node_df['AllocMem'] = node_df['AllocMem'].astype(int)
-    node_df['FreeMem'] = np.where(node_df['FreeMem'] == 'N/A',
-                                  0,
-                                  node_df['FreeMem']).astype(int)
+    node_df['CPU_ALLOC'] = cpu_aiot[:, ALLOC]
+    node_df['CPU_IDLE'] = cpu_aiot[:, IDLE]
+    node_df['CPU_OTHER'] = cpu_aiot[:, OTHER]
+    node_df['CPU_TOT'] = cpu_aiot[:, TOTAL]
+
+    node_df['MEMORY'] = node_df['MEMORY'].astype(int)
+    node_df['ALLOCMEM'] = node_df['ALLOCMEM'].astype(int)
+    node_df['FREE_MEM'] = np.where(node_df['FREE_MEM'] == 'N/A',
+                                   0,
+                                   node_df['FREE_MEM']).astype(int)
 
     return node_df
 
 
 def _clean_job_df(job_df):
-    job_df['CPUS'] = job_df['CPUS'].astype(int)
-    job_df['NODES'] = job_df['NODES'].astype(int)
-    job_df['NODELIST'] = np.where(job_df['NODELIST'] == '',
-                                  np.nan,
-                                  job_df['NODELIST'])
-    job_df['SUBMIT_TIME'] = pd.to_datetime(job_df['SUBMIT_TIME'])
-    # job_df['TIME'] = pd.to_datetime(job_df['TIME'])
+    job_df['ReqCPUS'] = job_df['ReqCPUS'].astype(int)
+    job_df['AllocCPUS'] = job_df['AllocCPUS'].astype(int)
+    job_df['AllocNodes'] = job_df['AllocNodes'].astype(int)
+    job_df['Submit'] = pd.to_datetime(job_df['Submit'])
+    # job_df['Start'] = pd.to_datetime(job_df['Start'])
+    job_df['ElapsedRaw'] = job_df['ElapsedRaw'].astype(int)
+    job_df['CPUTimeRAW'] = job_df['CPUTimeRAW'].astype(int)
 
     return job_df
+
+
+def _split_aiot(aiot):
+    split_res = aiot.str.split('/', n=4, expand=False).tolist()
+    return np.array(split_res).astype(int)
+    # return aiot.str.split('/', n=4, expand=True).astype(int).values
 
 
 if __name__ == '__main__':
