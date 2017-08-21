@@ -5,10 +5,13 @@ import datetime
 NOW = datetime.datetime.now()
 
 
-def query_jobs():
+def query_jobs(**td_kwargs):
+    if not td_kwargs:
+        td_kwargs = {'days': 1}
+
     jobs = slurpy.get_job_df(partition='cpu',
                              end_time=NOW,
-                             period=datetime.timedelta(days=1))
+                             period=datetime.timedelta(**td_kwargs))
     jobs['Jobs'] = 1
 
     print(jobs.head())

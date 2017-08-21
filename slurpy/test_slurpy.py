@@ -129,7 +129,7 @@ def test_extract_scontrol_features():
 
 
 def test_query_jobs():
-    assert query_jobs() == 0
+    assert query_jobs(minutes=5) == 0
 
 
 def test_query_nodes():
