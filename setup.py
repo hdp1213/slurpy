@@ -16,6 +16,7 @@ setup(name='slurpy',
       ],
       entry_points={
           'console_scripts': ['query-jobs=slurpy.cl:query_jobs',
+                              'query-nodes=slurpy.cl:query_nodes',
                               'slurpyd=slurpy.slurpy_daemon:main'],
       },
       zip_safe=False)
