@@ -107,7 +107,7 @@ def setup_loggers(args, log_config):
     slurpy_logger.addHandler(rfh)
 
     if args.verbosity > 0:
-        sh = handlers.StreamHandler()
+        sh = logging.StreamHandler()
         sh.setLevel(VERBOSE_LEVEL.get(args.verbosity, logging.DEBUG))
         sh.setFormatter(formatter)
         slurpy_logger.addHandler(sh)
