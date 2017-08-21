@@ -20,4 +20,5 @@ Depending on the state of your `~/.local` directory, you may be required by `pip
 
  - `numpy`
  - `pandas`
+ - [`apscheduler`](http://apscheduler.readthedocs.io/en/latest/userguide.html)
  - `pytest` (optional)
