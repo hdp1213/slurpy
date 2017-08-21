@@ -247,7 +247,7 @@ def _query_sinfo(sinfo_fmt, partition=None, node_list=None):
 
 
 def _query_sacct(sacct_fmt, partition=None, state=None,
-                 start_time=None, end_time=None):
+                 end_time=None, period=None):
     sacct_cmd = ['sacct', '--units=K', '--delimiter={}'.format(DELIM),
                  '-aPo', sacct_fmt]
 
@@ -257,11 +257,15 @@ def _query_sacct(sacct_fmt, partition=None, state=None,
     if state:
         sacct_cmd += ['-s', state]
 
-    if start_time:
-        sacct_cmd += ['-S', start_time]
-
     if end_time:
-        sacct_cmd += ['-E', end_time]
+        sacct_cmd += ['-E', end_time.strftime(DATE_FORMAT)]
+
+        if period:
+            start_time = end_time - period
+            sacct_cmd += ['-S', start_time.strftime(DATE_FORMAT)]
+
+    elif period:
+        raise ValueError('Cannot specify period without an end time!')
 
     return subprocess.check_output(sacct_cmd) \
                      .decode(DECODE_FORMAT)

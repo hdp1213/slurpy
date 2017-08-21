@@ -56,12 +56,13 @@ def get_node_df(node_features=NODE_FEATURES, partition=None):
     return _clean_node_df(raw_node_df)
 
 
-def get_job_df(job_features=JOB_FEATURES, partition=None, state=None):
-    today = datetime.now().strftime('%Y-%m-%d')
+def get_job_df(job_features=JOB_FEATURES, partition=None, state=None,
+               end_time=None, period=None):
     raw_job_df = query_jobs(job_features,
                             partition=partition,
-                            start_time=today,
-                            state=state)
+                            state=state,
+                            end_time=end_time,
+                            period=period)
     return _clean_job_df(raw_job_df)
 
 
@@ -96,9 +97,7 @@ def _clean_job_df(job_df):
 
 
 def _split_aiot(aiot):
-    split_res = aiot.str.split('/', n=4, expand=False).tolist()
-    return np.array(split_res).astype(int)
-    # return aiot.str.split('/', n=4, expand=True).astype(int).values
+    return aiot.str.split('/', n=4, expand=True).astype(int).values
 
 
 if __name__ == '__main__':

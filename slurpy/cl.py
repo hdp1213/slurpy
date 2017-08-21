@@ -1,9 +1,21 @@
 import slurpy
 
+import datetime
+
+NOW = datetime.datetime.now()
+
 
 def query_jobs():
-    jobs = slurpy.get_job_df(partition='cpu')
-    jobs['JOBS'] = 1
+    jobs = slurpy.get_job_df(partition='cpu',
+                             end_time=NOW,
+                             period=datetime.timedelta(days=1))
+    jobs['Jobs'] = 1
+
+    print(jobs.head())
+
+    print('Most recent start time: {}'.format(jobs['Start'].max()))
+    print('Most recent submit time: {}'.format(jobs['Submit'].max()))
+
     print(jobs.groupby('State').sum())
 
     return 0
