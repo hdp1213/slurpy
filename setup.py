@@ -11,6 +11,7 @@ setup(name='slurpy',
       install_requires=[
           'numpy',
           'pandas',
+          'apscheduler',
           'pytest',
       ],
       entry_points={

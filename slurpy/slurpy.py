@@ -22,6 +22,7 @@ JOB_FEATURES = ['JOBID',
                 'SUBMIT_TIME',
                 'TIME']
 
+
 def filter_df(df, column, patterns, exclude=False):
     """Filter nodes depending on their current state.
 
