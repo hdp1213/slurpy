@@ -4,22 +4,37 @@ import logging
 from logging.handlers import RotatingFileHandler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-import argparse
+from argparse import ArgumentParser
 from configparser import ConfigParser, ExtendedInterpolation
 
-from datetime import datetime
-from os.path import join as path_join, expanduser, basename
+from contextlib import closing
+from datetime import datetime, timedelta
+from os import walk
+from os.path import join as path_join, expanduser, basename, splitext
+from tarfile import open as tar_open
 from time import perf_counter as tick
 
 CONFIG_ROOT = '~/.config/slurpyd.ini'
 
 MAIN_LOG = 'slurpyd'
 NODE_LOG = 'slurpyd.NodeTrack'
-MRGE_LOG = 'slurpyd.NodeMerge'
+MRGE_LOG = 'slurpyd.MergeNode'
 JOBS_LOG = 'slurpyd.JobOrders'
 
 VERBOSE_LEVEL = {1: logging.INFO,
                  2: logging.DEBUG}
+
+CRON_TO_TD = {'week':   'weeks',
+              'day':    'days',
+              'hour':   'hours',
+              'minute': 'minutes',
+              'second': 'seconds'}
+
+CRON_ORDER = ['week', 'day', 'hour', 'minute', 'second']
+
+COMPRESS_EXT = {'gzip':  'gz',
+                'bzip2': 'bz2',
+                'lzma':  'xz'}
 
 STREAM_FMT = '{name:<18}: {levelname:<8} {message}'
 
@@ -41,16 +56,19 @@ def main():
 
     log_config = config['Log']
     node_config = config['NodeTrack']
+    merge_config = config['MergeNode']
     job_config = config['JobOrders']
 
     setup_loggers(args, log_config)
 
-    mlog = get_slurpyd_logger(MAIN_LOG)
+    slog = get_slurpyd_logger(MAIN_LOG)
     nlog = get_slurpyd_logger(NODE_LOG)
+    mlog = get_slurpyd_logger(MRGE_LOG)
     jlog = get_slurpyd_logger(JOBS_LOG)
 
-    mlog.info("Starting slurpyd ...")
+    slog.info("Starting slurpyd ...")
 
+    # Validate config arguments
     try:
         slurpy.check_node_features(node_config['features'])
     except ValueError as e:
@@ -65,6 +83,7 @@ def main():
                        args.config_file)
         return INVALID_PROPERTY
 
+    # Process writer/compressor information from config file
     try:
         node_writer = df_writer(node_config['out_format'])
     except KeyError as e:
@@ -72,12 +91,33 @@ def main():
                        args.config_file)
         return INVALID_FORMAT
 
-    if args.dry_run:
-        nlog.info("--dry-run flag set, no files being saved")
-        node_writer = df_writer('none')
-    else:
-        nlog.info("Saving nodes to directory {}", node_config['out_dir'])
+    merge_compressor = df_compressor('tar')
 
+    # Print frequency information for jobs
+    nlog.info("Running every {} {}",
+              node_config['frequency'], node_config['units'])
+
+    mlog.info("Running every {} {}",
+              merge_config['frequency'], merge_config['units'])
+
+    # Change writers to none if a dry run is specified
+    if args.dry_run:
+        slog.info("--dry-run flag set, no files will be written")
+
+        node_writer = df_writer('none')
+        merge_compressor = df_compressor('none')
+
+    else:
+        nlog.info("Writing nodes to directory {} in {} format",
+                  node_config['out_dir'],
+                  node_config['out_format'])
+
+        mlog.info("Compressing node files to directory {} using "
+                  "{} compression",
+                  merge_config['out_dir'],
+                  merge_config['out_compression'])
+
+    # Assign jobs to scheduler
     scheduler = BlockingScheduler(timezone='Australia/Adelaide')
 
     scheduler.add_job(node_track, 'cron',
@@ -85,6 +125,13 @@ def main():
                       max_instances=2,
                       **get_cron_freq(node_config))
 
+    scheduler.add_job(merge_node, 'cron',
+                      args=[node_config, merge_config,
+                            merge_compressor],
+                      max_instances=2,
+                      **get_cron_freq(merge_config))
+
+    # Start daemon process
     scheduler.start()
 
 
@@ -108,10 +155,26 @@ def node_track(node_config, node_writer):
         nlog.exception("Saving to {} failed:", node_config['out_dir'])
 
 
-def node_merge(node_config):
-    nmlog = get_slurpyd_logger(MRGE_LOG)
+def merge_node(node_config, merge_config, merge_compressor):
+    mlog = get_slurpyd_logger(MRGE_LOG)
 
-    nmlog.info("Merging ")
+    end_time = datetime.now()
+    start_time = end_time - get_timedelta(merge_config)
+
+    mlog.info("Gathering node files written from {:%Y-%m-%d %H:%M:%S} "
+              "to {:%Y-%m-%d %H:%M:%S}",
+              start_time, end_time)
+
+    tar_time_s = tick()
+    tar_files = get_files_between(start_time, end_time, node_config)
+    tar_time_s = tick() - tar_time_s
+
+    mlog.debug("Gathering took {:.3f} ms", tar_time_s*S_TO_MS)
+
+    tar_filename = endtime.strftime(merge_config['out_file'])
+    tar_compression = merge_config['out_compression']
+
+    merge_compressor(mlog, tar_filename, tar_compression, tar_files)
 
 
 def setup_loggers(args, log_config):
@@ -153,13 +216,34 @@ def get_slurpyd_logger(logger_name):
 
 
 def get_cron_freq(opt_config):
-    units = opt_config['units']
+    base_unit = opt_config['units']
     cron = '*/{}'.format(opt_config['frequency'])
-    return {units: cron}
+
+    base_cron = {base_unit: cron}
+    lower_cron = {}
+
+    for unit in _get_lower_cron_units(base_unit):
+        lower_cron[unit] = '0'
+
+    return dict(base_cron, **lower_cron)
+
+
+def _get_lower_cron_units(unit):
+    cron_ind = CRON_ORDER.index(unit)
+    return CRON_ORDER[cron_ind+1:]
+
+
+def get_timedelta(opt_config):
+    td_units = CRON_TO_TD.get(opt_config['units'])
+    value = opt_config.getint('frequency')
+    try:
+        return timedelta(**{td_units: value})
+    except TypeError:
+        return timedelta(0)
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(description='%(prog)s, a slurpy daemon.')
+    parser = ArgumentParser(description='%(prog)s, a slurpy daemon.')
 
     parser.add_argument('--config',
                         type=str,
@@ -192,42 +276,86 @@ def make_parser():
     return parser
 
 
+def get_files_between(start_time, end_time, opt_config):
+    for root, _, files in walk(opt_config['out_dir']):
+        for file in sorted(files):
+            file_time = datetime.strptime(_strip_ext(file),
+                                          opt_config['out_file'])
+            if start_time <= file_time <= end_time:
+                yield path_join(root, file)
+
+
+def _strip_ext(path):
+    return splitext(path)[0]
+
+
 def df_writer(method):
-    return {'csv':  _csv,
-            'pkl':  _pkl,
-            'json': _json,
-            'none': _none}.get(method)
+    return {'csv':  _csv_write,
+            'pkl':  _pkl_write,
+            'json': _json_write,
+            'none': _none_write}.get(method)
 
 
-def _pkl(log, dataframe, path):
+def _pkl_write(log, dataframe, path):
     filepath = '{}.pkl'.format(path)
-    _log_save(log, filepath)
+    _log_write(log, filepath)
+    write_time_s = tick()
     dataframe.to_pickle(filepath)
+    write_time_s = tick() - write_time_s
+
+    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
 
-def _csv(log, dataframe, path):
+def _csv_write(log, dataframe, path):
     filepath = '{}.csv'.format(path)
-    _log_save(log, filepath)
+    _log_write(log, filepath)
+    write_time_s = tick()
     dataframe.to_csv(filepath,
                      index=False)
+    write_time_s = tick() - write_time_s
+
+    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
 
-def _json(log, dataframe, path):
+def _json_write(log, dataframe, path):
     filepath = '{}.json'.format(path)
-    _log_save(log, filepath)
+    _log_write(log, filepath)
+    write_time_s = tick()
     dataframe.to_json(filepath)
+    write_time_s = tick() - write_time_s
+
+    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
 
-def _none(log, dataframe, path):
+def _none_write(log, dataframe, path):
     pass
 
 
-def _log_save(log, path):
-    log.info("Saving file to {}", basename(path))
+def df_compressor(method):
+    return {'tar':  _tar_compress,
+            'none': _none_compress}
 
 
-def _keep_first(x):
-    return x.iloc[0]
+def _tar_compress(log, path, compression, files):
+    _log_write(log, path)
+    ext = COMPRESS_EXT.get(compression)
+    compress_time_s = tick()
+    with closing(tar_open('{}.tar.{}'.format(path, ext),
+                          mode='w:{}'.format(ext))) as tar_file:
+        for file in files:
+            tar_file.add(file)
+
+    compress_time_s = tick() - compress_time_s
+
+    log.debug("Compression took {:.3f} s", compress_time_s)
+
+
+def _none_compress(log, path, compression, files):
+    pass
+
+
+def _log_write(log, path):
+    log.info("Writing file to {}", basename(path))
 
 
 class FormatAdapter(logging.LoggerAdapter):
