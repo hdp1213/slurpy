@@ -346,6 +346,7 @@ def _tar_compress(log, path, compression, files):
                   mode='w:{}'.format(ext)) as tar_file:
         for file in files:
             tar_file.add(file, filter=_keep_basename)
+            remove(file)
 
     compress_time_s = tick() - compress_time_s
 

@@ -53,10 +53,12 @@ def test_merge_node():
 
     slurpyd.merge_node(node_config, merge_config, merge_compressor)
 
-    tar_file = '{out_dir}/{out_file}.tar*'.format(**merge_config)
+    # TODO: untar the file back to out_dir and then remove the generated one
 
-    mlog.info("Removing {}".format(tar_file))
-    os.remove(glob(os.path.expanduser(tar_file))[0])
+    # tar_file = '{out_dir}/{out_file}.tar*'.format(**merge_config)
+
+    # mlog.info("Removing {}".format(tar_file))
+    # os.remove(glob(os.path.expanduser(tar_file))[0])
 
 
 @pytest.mark.parametrize('frequency', CRON_FREQUENCIES)
