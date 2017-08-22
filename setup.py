@@ -1,7 +1,8 @@
 from setuptools import setup
 
 setup(name='slurpy',
-      version='0.2',
+      version=open("slurpy/_version.py").readlines()[-1] \
+                                        .split()[-1].strip("\"'"),
       description='Python3 API for SLURM frontend commands',
       url='https://github.com/hdp1213/slurpy',
       author='Harry Poulter',
