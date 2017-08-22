@@ -7,9 +7,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from argparse import ArgumentParser
 from configparser import ConfigParser, ExtendedInterpolation
 
-from contextlib import closing
 from datetime import datetime, timedelta
-from os import walk
+from os import remove, walk
 from os.path import join as path_join, expanduser, basename, splitext
 from tarfile import open as tar_open
 from time import perf_counter as tick
@@ -147,7 +146,8 @@ def node_track(node_config, node_writer):
 
     nlog.debug("Querying took {:.3f} ms", node_time_s*S_TO_MS)
 
-    rnodes_path = path_join(node_config['out_dir'], node_filename)
+    rnodes_path = path_join(expanduser(node_config['out_dir']),
+                            node_filename)
 
     try:
         node_writer(nlog, rnode_df, rnodes_path)
@@ -171,10 +171,12 @@ def merge_node(node_config, merge_config, merge_compressor):
 
     mlog.debug("Gathering took {:.3f} ms", tar_time_s*S_TO_MS)
 
-    tar_filename = endtime.strftime(merge_config['out_file'])
+    tar_filename = end_time.strftime(merge_config['out_file'])
+    tar_path = path_join(expanduser(merge_config['out_dir']),
+                         tar_filename)
     tar_compression = merge_config['out_compression']
 
-    merge_compressor(mlog, tar_filename, tar_compression, tar_files)
+    merge_compressor(mlog, tar_path, tar_compression, tar_files)
 
 
 def setup_loggers(args, log_config):
@@ -225,7 +227,7 @@ def get_cron_freq(opt_config):
     for unit in _get_lower_cron_units(base_unit):
         lower_cron[unit] = '0'
 
-    return dict(base_cron, **lower_cron)
+    return {**base_cron, **lower_cron}
 
 
 def _get_lower_cron_units(unit):
@@ -277,11 +279,11 @@ def make_parser():
 
 
 def get_files_between(start_time, end_time, opt_config):
-    for root, _, files in walk(opt_config['out_dir']):
+    for root, _, files in walk(expanduser(opt_config['out_dir'])):
         for file in sorted(files):
             file_time = datetime.strptime(_strip_ext(file),
                                           opt_config['out_file'])
-            if start_time <= file_time <= end_time:
+            if start_time <= file_time < end_time:
                 yield path_join(root, file)
 
 
@@ -333,21 +335,26 @@ def _none_write(log, dataframe, path):
 
 def df_compressor(method):
     return {'tar':  _tar_compress,
-            'none': _none_compress}
+            'none': _none_compress}.get(method)
 
 
 def _tar_compress(log, path, compression, files):
     _log_write(log, path)
     ext = COMPRESS_EXT.get(compression)
     compress_time_s = tick()
-    with closing(tar_open('{}.tar.{}'.format(path, ext),
-                          mode='w:{}'.format(ext))) as tar_file:
+    with tar_open('{}.tar.{}'.format(path, ext),
+                  mode='w:{}'.format(ext)) as tar_file:
         for file in files:
-            tar_file.add(file)
+            tar_file.add(file, filter=_keep_basename)
 
     compress_time_s = tick() - compress_time_s
 
     log.debug("Compression took {:.3f} s", compress_time_s)
+
+
+def _keep_basename(tarinfo):
+    tarinfo.name = basename(tarinfo.name)
+    return tarinfo
 
 
 def _none_compress(log, path, compression, files):
