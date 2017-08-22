@@ -60,7 +60,7 @@ def main():
         return 1
 
     try:
-        node_fmtter = formatter(node_config['out format'])
+        node_fmtter = formatter(node_config['out_format'])
     except KeyError as e:
         nlog.exception("Invalid node format in {}:",
                        args.config_file)
@@ -68,7 +68,7 @@ def main():
 
     scheduler = BlockingScheduler(timezone='Australia/Adelaide')
 
-    nlog.info("Saving nodes to directory {}", node_config['out dir'])
+    nlog.info("Saving nodes to directory {}", node_config['out_dir'])
 
     scheduler.add_job(node_track, 'cron',
                       args=[node_config, node_fmtter],
@@ -82,7 +82,7 @@ def node_track(node_config, node_formatter):
     nlog = get_slurpyd_logger(NODE_LOG)
 
     nlog.info("Querying SLURM nodes")
-    node_filename = datetime.now().strftime(node_config['out file'])
+    node_filename = datetime.now().strftime(node_config['out_file'])
 
     node_time = clock()
     rnode_df = slurpy.query_nodes(node_config['features'])
@@ -90,15 +90,15 @@ def node_track(node_config, node_formatter):
 
     nlog.debug("Querying took {:.4} s", node_time)
 
-    rnodes_path = path_join(node_config['out dir'], node_filename)
+    rnodes_path = path_join(node_config['out_dir'], node_filename)
 
     nlog.info("Saving node state as {}.{}", node_filename,
-              node_config['out format'])
+              node_config['out_format'])
 
     try:
         node_formatter(rnode_df, rnodes_path)
     except FileNotFoundError:
-        nlog.exception("Saving to {} failed:", node_config['out dir'])
+        nlog.exception("Saving to {} failed:", node_config['out_dir'])
 
 
 def node_merge(node_config):
@@ -126,7 +126,7 @@ def setup_loggers(args, log_config):
 
     rfh = RotatingFileHandler(filename=expanduser(log_filename),
                               mode='w',
-                              maxBytes=log_config.getint('max bytes'),
+                              maxBytes=log_config.getint('max_bytes'),
                               backupCount=log_config.getint('backups'))
     rfh.setLevel(logging.DEBUG)
     rfh.setFormatter(file_fmtr)
