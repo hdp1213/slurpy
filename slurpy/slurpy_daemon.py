@@ -9,7 +9,7 @@ from configparser import ConfigParser, ExtendedInterpolation
 
 from datetime import datetime
 from os.path import join as path_join, expanduser
-from time import clock
+from time import perf_counter as tick
 
 CONFIG_ROOT = '~/.config/slurpyd.ini'
 
@@ -20,6 +20,8 @@ JOBS_LOG = 'slurpyd.JobOrders'
 
 VERBOSE_LEVEL = {1: logging.INFO,
                  2: logging.DEBUG}
+
+S_TO_MS = 1000
 
 STREAM_FMT = '{name:<18}: {levelname:<8} {message}'
 
@@ -84,11 +86,11 @@ def node_track(node_config, node_formatter):
     nlog.info("Querying SLURM nodes")
     node_filename = datetime.now().strftime(node_config['out_file'])
 
-    node_time = clock()
+    node_time_s = tick()
     rnode_df = slurpy.query_nodes(node_config['features'])
-    node_time = clock() - node_time
+    node_time_s = tick() - node_time_s
 
-    nlog.debug("Querying took {:.4} s", node_time)
+    nlog.debug("Querying took {:.3f} ms", node_time_s*S_TO_MS)
 
     rnodes_path = path_join(node_config['out_dir'], node_filename)
 
