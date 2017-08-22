@@ -90,14 +90,6 @@ def node_track(node_config, node_formatter):
 
     nlog.debug("Querying took {:.4} s", node_time)
 
-    # node_time = clock()
-    # rnode_df = raw_node_df.groupby('HOSTNAMES') \
-    #                       .apply(_keep_first) \
-    #                       .reset_index(drop=True)
-    # node_time = clock() - node_time
-
-    # nlog.debug("Regrouping took {:.4} s", node_time)
-
     rnodes_path = path_join(node_config['out dir'], node_filename)
 
     nlog.info("Saving node state as {}.{}", node_filename,
@@ -198,7 +190,8 @@ def _pkl(dataframe, path):
 
 
 def _csv(dataframe, path):
-    dataframe.to_csv('{}.csv'.format(path))
+    dataframe.to_csv('{}.csv'.format(path),
+                     index=False)
 
 
 def _json(dataframe, path):

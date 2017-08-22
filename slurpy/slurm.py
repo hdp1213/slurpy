@@ -157,13 +157,17 @@ def query_nodes(node_features, **kwargs):
     raw_sinfo = _query_sinfo(node_format, **kwargs)
 
     # Need to append empty string to node_header due to csv reading
-    # It is removed in the DataFrame construction
     node_header.append('')
 
-    return _extract_parsable_data(raw_sinfo, node_header,
-                                  delimiter=' ',
-                                  skipinitialspace=True,
-                                  strict=True)
+    res = _extract_parsable_data(raw_sinfo, node_header,
+                                 delimiter=' ',
+                                 skipinitialspace=True,
+                                 strict=True)
+
+    # It is removed here
+    del res['']
+
+    return res
 
 
 def query_jobs(job_properties, **kwargs):
