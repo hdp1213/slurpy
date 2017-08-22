@@ -9,153 +9,141 @@ import numpy as np
 
 DECODE_FORMAT = 'utf-8'
 DELIM = '|'
+COMMA = ','
 DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
-JOB_FMT = {'ACCOUNT':          r'%a',
-           'GRES':             r'%b',
-           'MIN_CPUS':         r'%c',
-           'MIN_TMP_DISK':     r'%d',
-           'END_TIME':         r'%e',
-           'FEATURES':         r'%f',
-           'GROUP_NAME':       r'%g',
-           'OVER_SUBSCRIBE':   r'%h',
-           'JOBID':            r'%i',
-           'NAME':             r'%j',
-           'COMMENT':          r'%k',
-           'TIME_LIMIT':       r'%l',
-           'MIN_MEMORY':       r'%m',
-           'REQ_NODES':        r'%n',
-           'COMMAND':          r'%o',
-           'PRIORITY_FLOAT':   r'%p',
-           'QOS':              r'%q',
-           'REASON':           r'%r',
-           'ST':               r'%t',
-           'USER':             r'%u',
-           'RESERVATION':      r'%v',
-           'WCKEY':            r'%w',
-           'EXC_NODES':        r'%x',
-           'NICE':             r'%y',
-           'S:C:T':            r'%z',
-           'NUM_TASKS':        r'%A',
-           'EXEC_HOST':        r'%B',
-           'CPUS':             r'%C',
-           'NODES':            r'%D',
-           'DEPENDENCY':       r'%E',
-           'ARRAY_JOB_ID':     r'%F',
-           'GROUP_ID':         r'%G',
-           'SOCKETS_PER_NODE': r'%H',
-           'CORES_PER_SOCKET': r'%I',
-           'THREADS_PER_CORE': r'%J',
-           'ARRAY_TASK_ID':    r'%K',
-           'TIME_LEFT':        r'%L',
-           'TIME':             r'%M',
-           'NODELIST':         r'%N',
-           'CONTIGUOUS':       r'%O',
-           'PARTITION':        r'%P',
-           'PRIORITY_INT':     r'%Q',
-           'NODELIST(REASON)': r'%R',
-           'START_TIME':       r'%S',
-           'STATE':            r'%T',
-           'USER':             r'%U',
-           'SUBMIT_TIME':      r'%V',
-           'LICENSES':         r'%W',
-           'CORE_SPEC':        r'%X',
-           'SCHEDNODES':       r'%Y',
-           'WORK_DIR':         r'%Z'}
+VALID_NODE_FEATURES = {'all',
+                       'allocmem',
+                       'allocnodes',
+                       'available',
+                       'cpus',
+                       'cpusload',
+                       'freemem',
+                       'cpusstate',
+                       'cores',
+                       'defaulttime',
+                       'disk',
+                       'features',
+                       'features_act',
+                       'groups',
+                       'gres',
+                       'maxcpuspernode',
+                       'memory',  # mb
+                       'nodes',
+                       'nodeaddr',
+                       'nodeai',
+                       'nodeaiot',
+                       'nodehost',
+                       'nodelist',
+                       'oversubscribe',
+                       'partition',
+                       'partitionname',
+                       'port',
+                       'preemptmode',
+                       'priorityjobfactor',
+                       'prioritytier',
+                       'priority',
+                       'reason',
+                       'root',
+                       'size',
+                       'statecompact',
+                       'statelong',
+                       'sockets',
+                       'socketcorethread',
+                       'time',
+                       'timestamp',
+                       'threads',
+                       'user',
+                       'userlong',
+                       'version',
+                       'weight'}
 
-JOB_STATES = {'PENDING',
-              'RUNNING',
-              'SUSPENDED',
-              'CANCELLED',
-              'CONFIGURING',
-              'COMPLETING',
-              'COMPLETED',
-              'FAILED',
-              'TIMEOUT',
-              'PREEMPTED',
-              'NODE_FAIL',
-              'REVOKED',
-              'SPECIAL_EXIT',
-              'BOOT_FAIL',
-              'STOPPED'}
-
-JOB_STS = {'PD',
-           'R',
-           'S',
-           'CA',
-           'CF',
-           'CG',
-           'CD',
-           'F',
-           'TO',
-           'PR',
-           'NF',
-           'RV',
-           'SE',
-           'BF',
-           'ST'}
-
-NODE_FMT = {'AVAIL':             r'%a',
-            'ACTIVE_FEATURES':   r'%b',
-            'CPUS':              r'%c',
-            'TMP_DISK':          r'%d',
-            'FREE_MEM':          r'%e',
-            'AVAIL_FEATURES':    r'%f',
-            'GROUPS':            r'%g',
-            'OVERSUBSCRIBE':     r'%h',
-            'TIMELIMIT':         r'%l',
-            'MEMORY':            r'%m',
-            'HOSTNAMES':         r'%n',
-            'NODE_ADDR':         r'%o',
-            'PRIO_TIER':         r'%p',
-            'ROOT':              r'%r',
-            'JOB_SIZE':          r'%s',
-            'ST':                r'%t',
-            'USER':              r'%u',
-            'VERSION':           r'%v',
-            'WEIGHT':            r'%w',
-            'S:C:T':             r'%z',
-            'NODES(A/I)':        r'%A',
-            'MAX_CPUS_PER_NODE': r'%B',
-            'CPUS(A/I/O/T)':     r'%C',
-            'NODES':             r'%D',
-            'REASON':            r'%E',
-            'NODES(A/I/O/T)':    r'%F',
-            'GRES':              r'%G',
-            'TIMESTAMP':         r'%H',
-            'PRIO_JOB_FACTOR':   r'%I',
-            'DEFAULTTIME':       r'%L',
-            'PREEMPT_MODE':      r'%M',
-            'NODELIST':          r'%N',
-            'CPU_LOAD':          r'%O',
-            'PARTITION*':        r'%P',
-            'PARTITION':         r'%R',
-            'ALLOCNODES':        r'%S',
-            'STATE':             r'%T',
-            'USER':              r'%U',
-            'SOCKETS':           r'%X',
-            'CORES':             r'%Y',
-            'THREADS':           r'%Z'}
-
-NODE_STATES = {'UNKNOWN',
-               'DOWN',
-               'IDLE',
-               'ALLOCATED',
-               'ERROR',
-               'MIXED',
-               'FUTURE',
-               'DRAIN',
-               'DRAINED',
-               'DRAINING',
-               'NO_RESPOND',
-               'RESERVED',
-               'PERFCTRS',
-               'COMPLETING',
-               'POWER_DOWN',
-               'POWER_UP',
-               'FAIL',
-               'MAINT',
-               'REBOOT'}
+VALID_JOB_PROPERTIES = {'all',
+                        'account',
+                        'admincomment',
+                        'alloccpus',
+                        'allocgres',
+                        'allocnodes',
+                        'alloctres',
+                        'associd',
+                        'avecpu',
+                        'avecpufreq',
+                        'avediskread',
+                        'avediskwrite',
+                        'avepages',
+                        'averss',
+                        'avevmsize',
+                        'blockid',
+                        'cluster',
+                        'comment',
+                        'consumedenergy',
+                        'consumedenergyraw',
+                        'cputime',
+                        'cputimeraw',
+                        'derivedexitcode',
+                        'elapsed',
+                        'elapsedraw',
+                        'eligible',
+                        'end',
+                        'exitcode',
+                        'gid',
+                        'group',
+                        'jobid',
+                        'jobidraw',
+                        'jobname',
+                        'layout',
+                        'maxdiskread',
+                        'maxdiskreadnode',
+                        'maxdiskreadtask',
+                        'maxdiskwrite',
+                        'maxdiskwritenode',
+                        'maxdiskwritetask',
+                        'maxpages',
+                        'maxpagesnode',
+                        'maxpagestask',
+                        'maxrss',
+                        'maxrssnode',
+                        'maxrsstask',
+                        'maxvmsize',
+                        'maxvmsizenode',
+                        'maxvmsizetask',
+                        'mincpu',
+                        'mincpunode',
+                        'mincputask',
+                        'ncpus',
+                        'nnodes',
+                        'nodelist',
+                        'ntasks',
+                        'priority',
+                        'partition',
+                        'qos',
+                        'qosraw',
+                        'reqcpufreq',
+                        'reqcpufreqmin',
+                        'reqcpufreqmax',
+                        'reqcpufreqgov',
+                        'reqcpus',
+                        'reqgres',
+                        'reqmem',
+                        'reqnodes',
+                        'reqtres',
+                        'reservation',
+                        'reservationid',
+                        'reserved',
+                        'resvcpu',
+                        'resvcpuraw',
+                        'start',
+                        'state',
+                        'submit',
+                        'suspended',
+                        'systemcpu',
+                        'timelimit',
+                        'totalcpu',
+                        'uid',
+                        'user',
+                        'usercpu',
+                        'wckey',
+                        'wckeyid'}
 
 
 def query_nodes(node_features, **kwargs):
@@ -164,12 +152,18 @@ def query_nodes(node_features, **kwargs):
     Available node features can be found by reading sinfo man page.
 
     Returns DataFrame of node features."""
-    node_format = ','.join(node_features)
-    raw_scontrol = _query_sinfo(node_format, **kwargs)
+    node_format, node_header = _listify(node_features)
 
-    return _extract_parsable_data(raw_scontrol,
+    raw_sinfo = _query_sinfo(node_format, **kwargs)
+
+    # Need to append empty string to node_header due to csv reading
+    # It is removed in the DataFrame construction
+    node_header.append('')
+
+    return _extract_parsable_data(raw_sinfo, node_header,
                                   delimiter=' ',
-                                  skipinitialspace=True)
+                                  skipinitialspace=True,
+                                  strict=True)
 
 
 def query_jobs(job_properties, **kwargs):
@@ -178,11 +172,33 @@ def query_jobs(job_properties, **kwargs):
     Available job properties can be found by running `sacct -e`.
 
     Returns DataFrame of job properties."""
-    job_format = ','.join(job_properties)
+    job_format, job_header = _listify(job_properties)
+
     raw_sacct = _query_sacct(job_format, **kwargs)
 
-    return _extract_parsable_data(raw_sacct,
-                                  delimiter=DELIM)
+    return _extract_parsable_data(raw_sacct, job_header,
+                                  delimiter=DELIM,
+                                  strict=True)
+
+
+def check_job_properties(properties):
+    if isinstance(properties, str):
+        properties = properties.split(COMMA)
+
+    for prop in properties:
+        if prop.lower() not in VALID_JOB_PROPERTIES:
+            err_str = '{!r} is not a valid job property'.format(prop)
+            raise ValueError(err_str)
+
+
+def check_node_features(features):
+    if isinstance(features, str):
+        features = features.split(COMMA)
+
+    for feat in features:
+        if feat.lower() not in VALID_NODE_FEATURES:
+            err_str = '{!r} is not a valid node feature'.format(feat)
+            raise ValueError(err_str)
 
 
 # Really only here to keep _extract_scontrol_features() in check
@@ -207,10 +223,9 @@ def _extract_scontrol_features(raw_scontrol, features):
                         columns=features)
 
 
-def _extract_parsable_data(raw_data, **csv_kwargs):
+def _extract_parsable_data(raw_data, header, **csv_kwargs):
     s_data = io.StringIO(raw_data)
     reader = csv.reader(s_data, **csv_kwargs)
-    header = next(reader)
 
     return pd.DataFrame(data=np.array([row for row in reader]),
                         columns=header)
@@ -234,7 +249,8 @@ def _query_scontrol(entity, ID=''):
 
 
 def _query_sinfo(sinfo_fmt, partition=None, node_list=None):
-    sinfo_cmd = ['sinfo', '-O', sinfo_fmt]
+    sinfo_cmd = ['sinfo', '--noconvert', '--noheader',
+                 '-O', sinfo_fmt]
 
     if partition:
         sinfo_cmd += ['-p', partition]
@@ -249,7 +265,7 @@ def _query_sinfo(sinfo_fmt, partition=None, node_list=None):
 def _query_sacct(sacct_fmt, partition=None, state=None,
                  end_time=None, period=None):
     sacct_cmd = ['sacct', '--units=K', '--delimiter={}'.format(DELIM),
-                 '-aPo', sacct_fmt]
+                 '--noheader', '-aPo', sacct_fmt]
 
     if partition:
         sacct_cmd += ['-r', partition]
@@ -269,3 +285,11 @@ def _query_sacct(sacct_fmt, partition=None, state=None,
 
     return subprocess.check_output(sacct_cmd) \
                      .decode(DECODE_FORMAT)
+
+
+def _listify(x):
+    """Return a (string, tuple) representation of x"""
+    try:
+        return x, x.split(COMMA)
+    except AttributeError:
+        return COMMA.join(x), x

@@ -18,10 +18,10 @@ NODE_LOG = 'slurpyd.NodeTrack'
 MRGE_LOG = 'slurpyd.NodeMerge'
 JOBS_LOG = 'slurpyd.JobOrders'
 
-R_NODES = r'r[1-4]n[0-9]{2}'
-
 VERBOSE_LEVEL = {1: logging.INFO,
                  2: logging.DEBUG}
+
+STREAM_FMT = '{name:<18}: {levelname:<8} {message}'
 
 
 def main():
@@ -33,56 +33,80 @@ def main():
     with open(expanduser(args.config_file), mode='r') as conf:
         config.read_file(conf)
 
-    log_config = config['log']
-    node_config = config['node query']
+    log_config = config['Log']
+    node_config = config['NodeTrack']
+    job_config = config['JobOrders']
 
     setup_loggers(args, log_config)
 
     mlog = get_slurpyd_logger(MAIN_LOG)
     nlog = get_slurpyd_logger(NODE_LOG)
+    jlog = get_slurpyd_logger(JOBS_LOG)
 
     mlog.info("Starting slurpyd ...")
 
+    try:
+        slurpy.check_node_features(node_config['features'])
+    except ValueError as e:
+        nlog.exception("Invalid node feature in {}:",
+                       args.config_file)
+        return 1
+
+    try:
+        slurpy.check_job_properties(job_config['properties'])
+    except ValueError as e:
+        jlog.exception("Invalid job property in {}:",
+                       args.config_file)
+        return 1
+
+    try:
+        node_fmtter = formatter(node_config['out format'])
+    except KeyError as e:
+        nlog.exception("Invalid node format in {}:",
+                       args.config_file)
+        return 1
+
     scheduler = BlockingScheduler(timezone='Australia/Adelaide')
 
-    nlog.info("Saving nodes to directory {}", node_config['output'])
+    nlog.info("Saving nodes to directory {}", node_config['out dir'])
 
     scheduler.add_job(node_track, 'cron',
+                      args=[node_config, node_fmtter],
                       max_instances=2,
-                      **get_cron_freq(node_config),
-                      args=[node_config])
+                      **get_cron_freq(node_config))
 
     scheduler.start()
 
 
-def node_track(node_config):
+def node_track(node_config, node_formatter):
     nlog = get_slurpyd_logger(NODE_LOG)
 
     nlog.info("Querying SLURM nodes")
-    node_filename = datetime.now().strftime(node_config['filename'])
+    node_filename = datetime.now().strftime(node_config['out file'])
 
     node_time = clock()
-    raw_node_df = slurpy.get_node_df()
+    rnode_df = slurpy.query_nodes(node_config['features'])
     node_time = clock() - node_time
 
     nlog.debug("Querying took {:.4} s", node_time)
 
-    node_time = clock()
-    rnode_df = raw_node_df.groupby('HOSTNAMES') \
-                          .apply(_keep_first) \
-                          .reset_index(drop=True)
-    node_time = clock() - node_time
+    # node_time = clock()
+    # rnode_df = raw_node_df.groupby('HOSTNAMES') \
+    #                       .apply(_keep_first) \
+    #                       .reset_index(drop=True)
+    # node_time = clock() - node_time
 
-    nlog.debug("Regrouping took {:.4} s", node_time)
+    # nlog.debug("Regrouping took {:.4} s", node_time)
 
-    rnodes_path = path_join(node_config['output'], node_filename)
+    rnodes_path = path_join(node_config['out dir'], node_filename)
 
-    nlog.info("Saving node state as {}", node_filename)
+    nlog.info("Saving node state as {}.{}", node_filename,
+              node_config['out format'])
 
     try:
-        rnode_df.to_pickle(rnodes_path)
+        node_formatter(rnode_df, rnodes_path)
     except FileNotFoundError:
-        nlog.exception("Saving to {} failed:", node_config['output'])
+        nlog.exception("Saving to {} failed:", node_config['out dir'])
 
 
 def node_merge(node_config):
@@ -98,26 +122,28 @@ def setup_loggers(args, log_config):
     logging.logProcesses = 0
 
     if args.log_file is None:
-        log_filename = path_join(log_config['output'], 'slurpyd.log')
+        log_filename = log_config['output']
     else:
-        log_filename = path_join(args.log_file, 'slurpyd.log')
+        log_filename = args.log_file
 
     slurpy_logger = logging.getLogger(MAIN_LOG)
     slurpy_logger.setLevel(logging.DEBUG)
 
-    formatter = logging.Formatter(fmt=log_config['format'], style='{')
+    file_fmtr = logging.Formatter(fmt=log_config['format'], style='{')
+    stream_fmtr = logging.Formatter(fmt=STREAM_FMT, style='{')
 
-    rfh = RotatingFileHandler(filename=log_filename, mode='w',
+    rfh = RotatingFileHandler(filename=expanduser(log_filename),
+                              mode='w',
                               maxBytes=log_config.getint('max bytes'),
                               backupCount=log_config.getint('backups'))
     rfh.setLevel(logging.DEBUG)
-    rfh.setFormatter(formatter)
+    rfh.setFormatter(file_fmtr)
     slurpy_logger.addHandler(rfh)
 
     if args.verbosity > 0:
         sh = logging.StreamHandler()
         sh.setLevel(VERBOSE_LEVEL.get(args.verbosity, logging.DEBUG))
-        sh.setFormatter(formatter)
+        sh.setFormatter(stream_fmtr)
         slurpy_logger.addHandler(sh)
 
     slurpy_logger.info("Writing logs to %s", log_filename)
@@ -143,10 +169,10 @@ def make_parser():
                         help='specify external config file '
                              '(default: %(default)s)')
 
-    parser.add_argument('--log',
+    parser.add_argument('--log-file',
                         type=str,
                         dest='log_file',
-                        help='specify log file location')
+                        help='specify custom log file location')
 
     parser.add_argument('-v', '--verbose',
                         action='count',
@@ -159,6 +185,24 @@ def make_parser():
                         version='%(prog)s v0.2')
 
     return parser
+
+
+def formatter(method):
+    return {'csv':  _csv,
+            'pkl':  _pkl,
+            'json': _json}.get(method)
+
+
+def _pkl(dataframe, path):
+    dataframe.to_pickle('{}.pkl'.format(path))
+
+
+def _csv(dataframe, path):
+    dataframe.to_csv('{}.csv'.format(path))
+
+
+def _json(dataframe, path):
+    dataframe.to_json('{}.json'.format(path))
 
 
 def _keep_first(x):

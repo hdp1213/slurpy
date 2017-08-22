@@ -1,7 +1,14 @@
-from .slurm import _extract_scontrol_feature, _extract_scontrol_features
-from .cl import *
+from .slurm import _extract_scontrol_feature, \
+                   _extract_scontrol_features, \
+                   _listify, \
+                   query_nodes as slurm_query_nodes
+from .cl import query_nodes as cl_query_nodes, \
+                query_jobs as cl_query_jobs
 
-from numpy import all as np_all
+from numpy import all as np_all, \
+                  unique as np_unique, \
+                  sort as np_sort
+
 
 import pytest
 
@@ -128,9 +135,41 @@ def test_extract_scontrol_features():
     assert len(node_info) == RAW_SCONTROL_LEN
 
 
-def test_query_jobs():
-    assert query_jobs(minutes=5) == 0
+def test_cl_query_jobs():
+    assert cl_query_jobs(minutes=5) == 0
 
 
-def test_query_nodes():
-    assert query_nodes() == 0
+def test_cl_query_nodes():
+    assert cl_query_nodes() == 0
+
+
+def test_listify():
+    comma_string = 'test1,test2,test3'
+    comma_lst = ['test1', 'test2', 'test3']
+
+    out_str1, out_lst1 = _listify(comma_string)
+    out_str2, out_lst2 = _listify(comma_lst)
+
+    assert out_str1 == out_str2
+    assert out_lst1 == out_lst2
+
+    fail_str = 'fail1, fail2, fail3'
+    fail_lst = ['fail1', 'fail2', 'fail3']
+
+    _, fail_out = _listify(fail_str)
+
+    assert fail_out != fail_lst
+
+
+def test_partition_name_dupes():
+    """Test that PartitionName returns duplicate NodeHost entries"""
+    raw_nodes = slurm_query_nodes('NodeHost')
+    dupe_nodes = slurm_query_nodes('NodeHost,PartitionName')
+
+    raw_vals = np_sort(raw_nodes['NodeHost'].values)
+    dupe_vals = np_sort(dupe_nodes['NodeHost'].values)
+
+    unique_vals = np_unique(dupe_vals)
+
+    assert np_all(raw_vals == unique_vals)
+    assert len(dupe_nodes) >= len(raw_nodes)
