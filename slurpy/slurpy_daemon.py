@@ -8,7 +8,7 @@ import argparse
 from configparser import ConfigParser, ExtendedInterpolation
 
 from datetime import datetime
-from os.path import join as path_join, expanduser
+from os.path import join as path_join, expanduser, basename
 from time import perf_counter as tick
 
 CONFIG_ROOT = '~/.config/slurpyd.ini'
@@ -21,9 +21,13 @@ JOBS_LOG = 'slurpyd.JobOrders'
 VERBOSE_LEVEL = {1: logging.INFO,
                  2: logging.DEBUG}
 
+STREAM_FMT = '{name:<18}: {levelname:<8} {message}'
+
 S_TO_MS = 1000
 
-STREAM_FMT = '{name:<18}: {levelname:<8} {message}'
+INVALID_FEATURE = 20
+INVALID_PROPERTY = 21
+INVALID_FORMAT = 30
 
 
 def main():
@@ -52,35 +56,39 @@ def main():
     except ValueError as e:
         nlog.exception("Invalid node feature in {}:",
                        args.config_file)
-        return 1
+        return INVALID_FEATURE
 
     try:
         slurpy.check_job_properties(job_config['properties'])
     except ValueError as e:
         jlog.exception("Invalid job property in {}:",
                        args.config_file)
-        return 1
+        return INVALID_PROPERTY
 
     try:
-        node_fmtter = formatter(node_config['out_format'])
+        node_writer = df_writer(node_config['out_format'])
     except KeyError as e:
         nlog.exception("Invalid node format in {}:",
                        args.config_file)
-        return 1
+        return INVALID_FORMAT
+
+    if args.dry_run:
+        nlog.info("--dry-run flag set, no files being saved")
+        node_writer = df_writer('none')
+    else:
+        nlog.info("Saving nodes to directory {}", node_config['out_dir'])
 
     scheduler = BlockingScheduler(timezone='Australia/Adelaide')
 
-    nlog.info("Saving nodes to directory {}", node_config['out_dir'])
-
     scheduler.add_job(node_track, 'cron',
-                      args=[node_config, node_fmtter],
+                      args=[node_config, node_writer],
                       max_instances=2,
                       **get_cron_freq(node_config))
 
     scheduler.start()
 
 
-def node_track(node_config, node_formatter):
+def node_track(node_config, node_writer):
     nlog = get_slurpyd_logger(NODE_LOG)
 
     nlog.info("Querying SLURM nodes")
@@ -94,11 +102,8 @@ def node_track(node_config, node_formatter):
 
     rnodes_path = path_join(node_config['out_dir'], node_filename)
 
-    nlog.info("Saving node state as {}.{}", node_filename,
-              node_config['out_format'])
-
     try:
-        node_formatter(rnode_df, rnodes_path)
+        node_writer(nlog, rnode_df, rnodes_path)
     except FileNotFoundError:
         nlog.exception("Saving to {} failed:", node_config['out_dir'])
 
@@ -168,6 +173,11 @@ def make_parser():
                         dest='log_file',
                         help='specify custom log file location')
 
+    parser.add_argument('-d', '--dry-run',
+                        action='store_true',
+                        dest='dry_run',
+                        help='run slurpyd without writing files')
+
     parser.add_argument('-v', '--verbose',
                         action='count',
                         default=0,
@@ -182,23 +192,38 @@ def make_parser():
     return parser
 
 
-def formatter(method):
+def df_writer(method):
     return {'csv':  _csv,
             'pkl':  _pkl,
-            'json': _json}.get(method)
+            'json': _json,
+            'none': _none}.get(method)
 
 
-def _pkl(dataframe, path):
-    dataframe.to_pickle('{}.pkl'.format(path))
+def _pkl(log, dataframe, path):
+    filepath = '{}.pkl'.format(path)
+    _log_save(log, filepath)
+    dataframe.to_pickle(filepath)
 
 
-def _csv(dataframe, path):
-    dataframe.to_csv('{}.csv'.format(path),
+def _csv(log, dataframe, path):
+    filepath = '{}.csv'.format(path)
+    _log_save(log, filepath)
+    dataframe.to_csv(filepath,
                      index=False)
 
 
-def _json(dataframe, path):
-    dataframe.to_json('{}.json'.format(path))
+def _json(log, dataframe, path):
+    filepath = '{}.json'.format(path)
+    _log_save(log, filepath)
+    dataframe.to_json(filepath)
+
+
+def _none(log, dataframe, path):
+    pass
+
+
+def _log_save(log, path):
+    log.info("Saving file to {}", basename(path))
 
 
 def _keep_first(x):
