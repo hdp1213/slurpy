@@ -172,9 +172,10 @@ def make_parser():
                         dest='verbosity',
                         help='specify level of verbosity')
 
+    version_str = '%(prog)s v{}'.format(slurpy.__version__)
     parser.add_argument('--version',
                         action='version',
-                        version='%(prog)s v0.2')
+                        version=version_str)
 
     return parser
 
