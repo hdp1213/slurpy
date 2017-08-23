@@ -64,7 +64,7 @@ def test_merge_node():
 
     tar_ext = slurpy_daemon.COMPRESS_EXT.get(COMPRESSION)
 
-    mlog.info("Compressing node files to {} using "
+    mlog.info("Will compress node files to {} using "
               "{} compression",
               merge_config['out_dir'], merge_config['out_compression'])
 
@@ -78,9 +78,10 @@ def test_merge_node():
     tar_path = os.path.join(os.path.expanduser(merge_config['out_dir']),
                             '{}.tar.{}'.format(NODE_DIR, tar_ext))
 
-    mlog.info("Extracting files back out from {}".format(tar_path))
+    mlog.info("Extracting files from {} to {}",
+              tar_path, merge_config['out_dir'])
     extract_files(tar_path, tar_ext,
-                  os.path.expanduser(node_config['out_dir']))
+                  os.path.expanduser(merge_config['out_dir']))
 
     mlog.info("Removing {}".format(tar_path))
     os.remove(os.path.expanduser(tar_path))
