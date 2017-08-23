@@ -155,10 +155,11 @@ def node_track(node_config, node_writer):
         nlog.exception("Saving to {} failed:", node_config['out_dir'])
 
 
-def merge_node(node_config, merge_config, merge_compressor):
+def merge_node(node_config, merge_config, merge_compressor,
+               end_time_eval=datetime.now):
     mlog = get_slurpyd_logger(MRGE_LOG)
 
-    end_time = datetime.now()
+    end_time = end_time_eval()
     start_time = end_time - get_timedelta(merge_config)
 
     mlog.info("Gathering node files written from {:%Y-%m-%d %H:%M:%S} "
@@ -171,7 +172,7 @@ def merge_node(node_config, merge_config, merge_compressor):
 
     mlog.debug("Gathering took {:.3f} ms", tar_time_s*S_TO_MS)
 
-    tar_filename = end_time.strftime(merge_config['out_file'])
+    tar_filename = start_time.strftime(merge_config['out_file'])
     tar_path = path_join(expanduser(merge_config['out_dir']),
                          tar_filename)
     tar_compression = merge_config['out_compression']
@@ -281,8 +282,12 @@ def make_parser():
 def get_files_between(start_time, end_time, opt_config):
     for root, _, files in walk(expanduser(opt_config['out_dir'])):
         for file in sorted(files):
-            file_time = datetime.strptime(_strip_ext(file),
-                                          opt_config['out_file'])
+            try:
+                file_time = datetime.strptime(_strip_ext(file),
+                                              opt_config['out_file'])
+            except ValueError:
+                continue
+
             if start_time <= file_time < end_time:
                 yield path_join(root, file)
 
@@ -339,17 +344,20 @@ def df_compressor(method):
 
 
 def _tar_compress(log, path, compression, files):
-    _log_write(log, path)
     ext = COMPRESS_EXT.get(compression)
+    tar_path = '{}.tar.{}'.format(path, ext)
+    _log_write(log, tar_path)
+    num_files = 0
     compress_time_s = tick()
-    with tar_open('{}.tar.{}'.format(path, ext),
-                  mode='w:{}'.format(ext)) as tar_file:
+    with tar_open(tar_path, mode='w:{}'.format(ext)) as tar_file:
         for file in files:
             tar_file.add(file, filter=_keep_basename)
             remove(file)
+            num_files += 1
 
     compress_time_s = tick() - compress_time_s
 
+    log.info("Compressed {} file(s)", num_files)
     log.debug("Compression took {:.3f} s", compress_time_s)
 
 
