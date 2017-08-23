@@ -11,6 +11,11 @@ import pytest
 
 CRON_FREQUENCIES = ['1', '10', '-1', '0']
 
+BYTE_PAIRS = [('1B', 1),
+              ('3K', 3072),
+              ('40M', 41943040),
+              ('7G', 7516192768)]
+
 TEST_DIR = '~/slurpy/tests'
 NODE_DIR = 'rnodes-20170823_000000'
 
@@ -114,6 +119,11 @@ def test_get_files_between():
                                                  config))
 
     assert len(files) == 12
+
+
+@pytest.mark.parametrize('test_pair', BYTE_PAIRS)
+def test_to_bytes(test_pair):
+    assert slurpy_daemon._to_bytes(test_pair[0]) == test_pair[1]
 
 
 def time_generator(time_str):

@@ -24,6 +24,11 @@ JOBS_LOG = 'slurpyd.JobOrders'
 VERBOSE_LEVEL = {1: logging.INFO,
                  2: logging.DEBUG}
 
+BYTE_SUFFIXES = {'G': 30,
+                 'M': 20,
+                 'K': 10,
+                 'B': 0}
+
 CRON_TO_TD = {'week':   'weeks',
               'day':    'days',
               'hour':   'hours',
@@ -204,9 +209,11 @@ def setup_loggers(args, log_config):
     file_fmtr = logging.Formatter(fmt=log_config['format'], style='{')
     stream_fmtr = logging.Formatter(fmt=STREAM_FMT, style='{')
 
+    max_bytes = _to_bytes(log_config['max_size'])
+
     rfh = RotatingFileHandler(filename=expanduser(log_filename),
                               mode='w',
-                              maxBytes=log_config.getint('max_bytes'),
+                              maxBytes=max_bytes,
                               backupCount=log_config.getint('backups'))
     rfh.setLevel(logging.DEBUG)
     rfh.setFormatter(file_fmtr)
@@ -313,6 +320,16 @@ def get_files_between(start_time, end_time, opt_config):
 
 def _strip_ext(path):
     return splitext(path)[0]
+
+
+def _to_bytes(byte_str):
+    """Convert a string of the form [0-9]+[G|M|K|B] to bytes"""
+    try:
+        scale = 2 ** BYTE_SUFFIXES.get(byte_str[-1])
+    except KeyError:
+        raise ValueError('{!r} is not valid'.format(byte_str[-1]))
+
+    return scale * int(byte_str[:-1])
 
 
 def decorate_writer(_plain_writer):
