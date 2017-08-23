@@ -73,6 +73,8 @@ def main():
     jlog = get_slurpyd_logger(JOBS_LOG)
 
     slog.info("Starting slurpyd ...")
+    slog.info("Writing logs to {}",
+              args.log_file if args.log_file else log_config['output'])
 
     # Validate config arguments
     try:
@@ -184,7 +186,7 @@ def merge_node(node_config, merge_config, merge_compressor,
                          tar_filename)
     tar_compression = merge_config['out_compression']
 
-    merge_compressor(mlog, tar_path, tar_compression, tar_files)
+    merge_compressor(mlog, tar_files, tar_path, tar_compression)
 
 
 def setup_loggers(args, log_config):
@@ -193,10 +195,8 @@ def setup_loggers(args, log_config):
     logging.logThreads = 0
     logging.logProcesses = 0
 
-    if args.log_file is None:
-        log_filename = log_config['output']
-    else:
-        log_filename = args.log_file
+    log_filename = args.log_file if args.log_file \
+        else log_config['output']
 
     slurpy_logger = logging.getLogger(MAIN_LOG)
     slurpy_logger.setLevel(logging.DEBUG)
@@ -217,8 +217,6 @@ def setup_loggers(args, log_config):
         sh.setLevel(VERBOSE_LEVEL.get(args.verbosity, logging.DEBUG))
         sh.setFormatter(stream_fmtr)
         slurpy_logger.addHandler(sh)
-
-    slurpy_logger.info("Writing logs to %s", log_filename)
 
 
 def get_slurpyd_logger(logger_name):
@@ -317,87 +315,101 @@ def _strip_ext(path):
     return splitext(path)[0]
 
 
+def decorate_writer(_plain_writer):
+    def _decorated_writer(log, dataframe, output_path):
+        WRITING_FILES.append(output_path)
+        write_time_s = tick()
+        _plain_writer(None, dataframe, output_path)
+        write_time_s = tick() - write_time_s
+        WRITING_FILES.pop()
+
+        log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
+
+    return _decorated_writer
+
+
 def df_writer(method):
-    return {'csv':  _csv_write,
-            'pkl':  _pkl_write,
-            'json': _json_write,
-            'none': _none_write}.get(method)
+    def write_method(log, dataframe, path):
+        file_path = '{}.{}'.format(path, method)
+        _log_write(log, file_path)
+        _writer = {'csv':  _csv_writer,
+                   'pkl':  _pkl_writer,
+                   'json': _json_writer,
+                   'none': _none_writer}.get(method)
+
+        _writer(log, dataframe, file_path)
+
+    return write_method
 
 
-def _pkl_write(log, dataframe, path):
-    filepath = '{}.pkl'.format(path)
-    _log_write(log, filepath)
-    WRITING_FILES.append(filepath)
-    write_time_s = tick()
-    dataframe.to_pickle(filepath)
-    write_time_s = tick() - write_time_s
-    WRITING_FILES.pop()
-
-    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
+@decorate_writer
+def _pkl_writer(log, dataframe, output_path):
+    dataframe.to_pickle(output_path)
 
 
-def _csv_write(log, dataframe, path):
-    filepath = '{}.csv'.format(path)
-    _log_write(log, filepath)
-    WRITING_FILES.append(filepath)
-    write_time_s = tick()
-    dataframe.to_csv(filepath,
+@decorate_writer
+def _csv_writer(log, dataframe, output_path):
+    dataframe.to_csv(output_path,
                      index=False)
-    write_time_s = tick() - write_time_s
-    WRITING_FILES.pop()
-
-    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
 
-def _json_write(log, dataframe, path):
-    filepath = '{}.json'.format(path)
-    _log_write(log, filepath)
-    WRITING_FILES.append(filepath)
-    write_time_s = tick()
-    dataframe.to_json(filepath)
-    write_time_s = tick() - write_time_s
-    WRITING_FILES.pop()
-
-    log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
+@decorate_writer
+def _json_writer(log, dataframe, output_path):
+    dataframe.to_json(output_path)
 
 
-def _none_write(log, dataframe, path):
+def _none_writer(log, dataframe, output_path):
     pass
+
+
+def decorate_compressor(_plain_compressor):
+    def _decorated_compressor(log, files, output_path, ext, filter):
+        COMPRESSING_FILES.append(output_path)
+        compress_time_s = tick()
+        num_files = _plain_compressor(None, files, output_path, ext,
+                                      filter)
+        compress_time_s = tick() - compress_time_s
+        COMPRESSING_FILES.pop()
+
+        log.info("Compressed {} file(s)", num_files)
+        log.debug("Compression took {:.3f} s", compress_time_s)
+
+    return _decorated_compressor
 
 
 def df_compressor(method):
-    return {'tar':  _tar_compress,
-            'none': _none_compress}.get(method)
+    def compress_method(log, files, path, compression):
+        ext = COMPRESS_EXT.get(compression)
+        file_path = '{}.tar.{}'.format(path, ext)
+        tar_name = basename(path)
+
+        def _tarball_file(tarinfo):
+            tarinfo.name = path_join(tar_name, basename(tarinfo.name))
+            return tarinfo
+
+        _log_write(log, file_path)
+        _compressor = {'tar':  _tar_compressor,
+                       'none': _none_compressor}.get(method)
+
+        _compressor(log, files, file_path, ext, _tarball_file)
+
+    return compress_method
 
 
-def _tar_compress(log, path, compression, files):
-    ext = COMPRESS_EXT.get(compression)
-    tar_path = '{}.tar.{}'.format(path, ext)
-    tar_name = basename(path)
-    _log_write(log, tar_path)
-
-    def _keep_basename(tarinfo):
-        tarinfo.name = path_join(tar_name, basename(tarinfo.name))
-        return tarinfo
-
+@decorate_compressor
+def _tar_compressor(log, files, output_path, ext, filter):
     num_files = 0
-    COMPRESSING_FILES.append(tar_path)
-    compress_time_s = tick()
-    with tar_open(tar_path, mode='w:{}'.format(ext)) as tar_file:
+    with tar_open(output_path, mode='w:{}'.format(ext)) as tar_file:
         for file in files:
-            tar_file.add(file, filter=_keep_basename)
+            tar_file.add(file, filter=filter)
             remove(file)
             num_files += 1
 
-    compress_time_s = tick() - compress_time_s
-    COMPRESSING_FILES.pop()
-
-    log.info("Compressed {} file(s)", num_files)
-    log.debug("Compression took {:.3f} s", compress_time_s)
+    return num_files
 
 
-def _none_compress(log, path, compression, files):
-    pass
+def _none_compressor(log, files, output_path, ext, filter):
+    return 0
 
 
 def _log_write(log, path):
