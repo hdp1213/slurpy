@@ -10,6 +10,7 @@ from configparser import ConfigParser, ExtendedInterpolation
 from datetime import datetime, timedelta
 from os import remove, walk
 from os.path import join as path_join, expanduser, basename, splitext
+import signal
 from tarfile import open as tar_open
 from time import perf_counter as tick
 
@@ -43,8 +44,14 @@ INVALID_FEATURE = 20
 INVALID_PROPERTY = 21
 INVALID_FORMAT = 30
 
+WRITING_FILES = []
+COMPRESSING_FILES = []
+
 
 def main():
+    signal.signal(signal.SIGTERM, graceful_exit)
+    signal.signal(signal.SIGINT, graceful_exit)
+
     parser = make_parser()
     args = parser.parse_args()
 
@@ -107,11 +114,11 @@ def main():
         merge_compressor = df_compressor('none')
 
     else:
-        nlog.info("Writing nodes to directory {} in {} format",
+        nlog.info("Will write nodes to directory {} in {} format",
                   node_config['out_dir'],
                   node_config['out_format'])
 
-        mlog.info("Compressing node files to directory {} using "
+        mlog.info("Will compress node files to directory {} using "
                   "{} compression",
                   merge_config['out_dir'],
                   merge_config['out_compression'])
@@ -166,11 +173,11 @@ def merge_node(node_config, merge_config, merge_compressor,
               "to {:%Y-%m-%d %H:%M:%S}",
               start_time, end_time)
 
-    tar_time_s = tick()
+    gather_time_s = tick()
     tar_files = get_files_between(start_time, end_time, node_config)
-    tar_time_s = tick() - tar_time_s
+    gather_time_s = tick() - gather_time_s
 
-    mlog.debug("Gathering took {:.3f} ms", tar_time_s*S_TO_MS)
+    mlog.debug("Gathering took {:.3f} ms", gather_time_s*S_TO_MS)
 
     tar_filename = start_time.strftime(merge_config['out_file'])
     tar_path = path_join(expanduser(merge_config['out_dir']),
@@ -243,6 +250,22 @@ def get_timedelta(opt_config):
         return timedelta(0)
 
 
+def graceful_exit(signum, frame):
+    slog = get_slurpyd_logger(MAIN_LOG)
+
+    for file in WRITING_FILES:
+        slog.error("slurpy failed to write {}, deleting...", file)
+        remove(file)
+
+    for file in COMPRESSING_FILES:
+        slog.error("slurpy failed to compress {}, deleting...", file)
+        remove(file)
+
+    slog.critical("slurpyd received signal {}, exiting...", signum)
+
+    exit(signum)
+
+
 def make_parser():
     parser = ArgumentParser(description='%(prog)s, a slurpy daemon.')
 
@@ -304,9 +327,11 @@ def df_writer(method):
 def _pkl_write(log, dataframe, path):
     filepath = '{}.pkl'.format(path)
     _log_write(log, filepath)
+    WRITING_FILES.append(filepath)
     write_time_s = tick()
     dataframe.to_pickle(filepath)
     write_time_s = tick() - write_time_s
+    WRITING_FILES.pop()
 
     log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
@@ -314,10 +339,12 @@ def _pkl_write(log, dataframe, path):
 def _csv_write(log, dataframe, path):
     filepath = '{}.csv'.format(path)
     _log_write(log, filepath)
+    WRITING_FILES.append(filepath)
     write_time_s = tick()
     dataframe.to_csv(filepath,
                      index=False)
     write_time_s = tick() - write_time_s
+    WRITING_FILES.pop()
 
     log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
@@ -325,9 +352,11 @@ def _csv_write(log, dataframe, path):
 def _json_write(log, dataframe, path):
     filepath = '{}.json'.format(path)
     _log_write(log, filepath)
+    WRITING_FILES.append(filepath)
     write_time_s = tick()
     dataframe.to_json(filepath)
     write_time_s = tick() - write_time_s
+    WRITING_FILES.pop()
 
     log.debug("Writing took {:.3f} ms", write_time_s*S_TO_MS)
 
@@ -352,6 +381,7 @@ def _tar_compress(log, path, compression, files):
         return tarinfo
 
     num_files = 0
+    COMPRESSING_FILES.append(tar_path)
     compress_time_s = tick()
     with tar_open(tar_path, mode='w:{}'.format(ext)) as tar_file:
         for file in files:
@@ -360,6 +390,7 @@ def _tar_compress(log, path, compression, files):
             num_files += 1
 
     compress_time_s = tick() - compress_time_s
+    COMPRESSING_FILES.pop()
 
     log.info("Compressed {} file(s)", num_files)
     log.debug("Compression took {:.3f} s", compress_time_s)
