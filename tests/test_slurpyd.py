@@ -11,7 +11,10 @@ import pytest
 
 CRON_FREQUENCIES = ['1', '10', '-1', '0']
 
-TEST_DIR = '~/slurpy/tests/nodes'
+TEST_DIR = '~/slurpy/tests'
+END_DATE = '2017-08-23 00:01:00'
+NODE_DIR = 'rnodes-20170823_000000'
+
 COMPRESSION = 'bzip2'
 TIMESTAMP = r'%Y-%m-%d %H:%M:%S'
 
@@ -47,7 +50,7 @@ def test_merge_node():
     config = read_config(slurpy_daemon.CONFIG_ROOT)
 
     node_config = config['NodeTrack']
-    node_config['out_dir'] = TEST_DIR
+    node_config['out_dir'] = os.path.join(TEST_DIR, NODE_DIR)
 
     merge_config = config['MergeNode']
     merge_config['frequency'] = '1'
@@ -62,7 +65,7 @@ def test_merge_node():
               merge_config['out_dir'], merge_config['out_compression'])
 
     merge_compressor = slurpy_daemon.df_compressor('tar')
-    end_time_eval = time_generator('2017-08-23 00:01:00')
+    end_time_eval = time_generator(END_DATE)
 
     slurpy_daemon.merge_node(node_config,
                              merge_config, merge_compressor,

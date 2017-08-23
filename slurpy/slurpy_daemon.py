@@ -344,7 +344,13 @@ def df_compressor(method):
 def _tar_compress(log, path, compression, files):
     ext = COMPRESS_EXT.get(compression)
     tar_path = '{}.tar.{}'.format(path, ext)
+    tar_name = basename(path)
     _log_write(log, tar_path)
+
+    def _keep_basename(tarinfo):
+        tarinfo.name = path_join(tar_name, basename(tarinfo.name))
+        return tarinfo
+
     num_files = 0
     compress_time_s = tick()
     with tar_open(tar_path, mode='w:{}'.format(ext)) as tar_file:
@@ -357,11 +363,6 @@ def _tar_compress(log, path, compression, files):
 
     log.info("Compressed {} file(s)", num_files)
     log.debug("Compression took {:.3f} s", compress_time_s)
-
-
-def _keep_basename(tarinfo):
-    tarinfo.name = basename(tarinfo.name)
-    return tarinfo
 
 
 def _none_compress(log, path, compression, files):
