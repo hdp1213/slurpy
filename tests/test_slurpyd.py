@@ -12,8 +12,11 @@ import pytest
 CRON_FREQUENCIES = ['1', '10', '-1', '0']
 
 TEST_DIR = '~/slurpy/tests'
-END_DATE = '2017-08-23 00:01:00'
 NODE_DIR = 'rnodes-20170823_000000'
+
+START_TIME = '2017-08-23 00:00:00'
+END_TIME = '2017-08-23 00:01:00'
+NODE_FMT = 'rnodes-%Y%m%d_%H%M%S'
 
 COMPRESSION = 'bzip2'
 TIMESTAMP = r'%Y-%m-%d %H:%M:%S'
@@ -38,10 +41,11 @@ def test_node_track():
 
     slurpy_daemon.node_track(node_config, node_writer)
 
-    csv_file = '{out_dir}/{out_file}.{out_format}'.format(**node_config)
+    csv_file = '{out_file}.{out_format}'.format(**node_config)
+    csv_path = os.path.join(node_config['out_dir'], csv_file)
 
-    nlog.info("Removing {}".format(csv_file))
-    os.remove(os.path.expanduser(csv_file))
+    nlog.info("Removing {}".format(csv_path))
+    os.remove(os.path.expanduser(csv_path))
 
 
 def test_merge_node():
@@ -65,21 +69,21 @@ def test_merge_node():
               merge_config['out_dir'], merge_config['out_compression'])
 
     merge_compressor = slurpy_daemon.df_compressor('tar')
-    end_time_eval = time_generator(END_DATE)
+    end_time_eval = time_generator(END_TIME)
 
     slurpy_daemon.merge_node(node_config,
                              merge_config, merge_compressor,
                              end_time_eval)
 
-    search_str = '{}/*.tar*'.format(merge_config['out_dir'])
-    tar_file = glob(os.path.expanduser(search_str))[0]
+    tar_path = os.path.join(os.path.expanduser(merge_config['out_dir']),
+                            '{}.tar.{}'.format(NODE_DIR, tar_ext))
 
-    mlog.info("Extracting files back out from {}".format(tar_file))
-    extract_files(tar_file, tar_ext,
+    mlog.info("Extracting files back out from {}".format(tar_path))
+    extract_files(tar_path, tar_ext,
                   os.path.expanduser(node_config['out_dir']))
 
-    mlog.info("Removing {}".format(tar_file))
-    os.remove(os.path.expanduser(tar_file))
+    mlog.info("Removing {}".format(tar_path))
+    os.remove(os.path.expanduser(tar_path))
 
 
 @pytest.mark.parametrize('frequency', CRON_FREQUENCIES)
@@ -95,6 +99,20 @@ def test_get_cron_freq(frequency):
                         'hour': '0',
                         'minute': '0',
                         'second': '0'}
+
+
+def test_get_files_between():
+    config = {}
+    config['out_dir'] = os.path.join(TEST_DIR, NODE_DIR)
+    config['out_file'] = NODE_FMT
+
+    start_time = time_generator(START_TIME)()
+    end_time = time_generator(END_TIME)()
+
+    files = list(slurpy_daemon.get_files_between(start_time, end_time,
+                                                 config))
+
+    assert len(files) == 12
 
 
 def time_generator(time_str):
