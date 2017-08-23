@@ -173,7 +173,7 @@ def merge_node(node_config, merge_config, merge_compressor,
                end_time_eval=datetime.now):
     mlog = get_slurpyd_logger(MRGE_LOG)
 
-    end_time = end_time_eval()
+    end_time = end_time_eval().replace(microsecond=0)
     start_time = end_time - get_timedelta(merge_config)
 
     mlog.info("Gathering node files written from {:%Y-%m-%d %H:%M:%S} "
