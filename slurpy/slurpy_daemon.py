@@ -223,10 +223,8 @@ def get_cron_freq(opt_config):
     cron = '*/{}'.format(opt_config['frequency'])
 
     base_cron = {base_unit: cron}
-    lower_cron = {}
-
-    for unit in _get_lower_cron_units(base_unit):
-        lower_cron[unit] = '0'
+    lower_cron = {unit: '0'
+                  for unit in _get_lower_cron_units(base_unit)}
 
     return {**base_cron, **lower_cron}
 
