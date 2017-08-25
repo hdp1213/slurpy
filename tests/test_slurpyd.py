@@ -16,6 +16,8 @@ BYTE_PAIRS = [('1B', 1),
               ('40M', 41943040),
               ('7G', 7516192768)]
 
+TEST_NODE_CONFIG = '~/slurpy/tests/test_node_track.ini'
+TEST_MERGE_CONFIG = '~/slurpy/tests/test_merge_node.ini'
 TEST_DIR = '~/slurpy/tests'
 NODE_DIR = 'rnodes-20170823_000000'
 
@@ -23,20 +25,15 @@ START_TIME = '2017-08-23 00:00:00'
 END_TIME = '2017-08-23 00:01:00'
 NODE_FMT = 'rnodes-%Y%m%d_%H%M%S'
 
-COMPRESSION = 'bzip2'
 TIMESTAMP = r'%Y-%m-%d %H:%M:%S'
 
 
 def test_node_track():
     nlog = slurpy_daemon.get_slurpyd_logger(slurpy_daemon.NODE_LOG)
 
-    config = read_config(slurpy_daemon.CONFIG_ROOT)
+    config = slurpy_daemon.read_config(TEST_NODE_CONFIG)
 
     node_config = config['NodeTrack']
-
-    node_config['out_dir'] = TEST_DIR
-    node_config['out_file'] = 'test_node_track'
-    node_config['out_format'] = 'csv'
 
     nlog.info("Writing nodes to directory {} in {} format",
               node_config['out_dir'],
@@ -56,18 +53,12 @@ def test_node_track():
 def test_merge_node():
     mlog = slurpy_daemon.get_slurpyd_logger(slurpy_daemon.MRGE_LOG)
 
-    config = read_config(slurpy_daemon.CONFIG_ROOT)
+    config = slurpy_daemon.read_config(TEST_MERGE_CONFIG)
 
     node_config = config['NodeTrack']
-    node_config['out_dir'] = os.path.join(TEST_DIR, NODE_DIR)
-
     merge_config = config['MergeNode']
-    merge_config['frequency'] = '1'
-    merge_config['units'] = 'minute'
-    merge_config['out_dir'] = TEST_DIR
-    merge_config['out_compression'] = COMPRESSION
 
-    tar_ext = slurpy_daemon.COMPRESS_EXT.get(COMPRESSION)
+    tar_ext = slurpy_daemon.COMPRESS_EXT.get(merge_config['out_compression'])
 
     mlog.info("Will compress node files to {} using "
               "{} compression",
@@ -80,13 +71,12 @@ def test_merge_node():
                              merge_config, merge_compressor,
                              end_time_eval)
 
-    tar_path = os.path.join(os.path.expanduser(merge_config['out_dir']),
+    tar_path = os.path.join(merge_config['out_dir_sh'],
                             '{}.tar.{}'.format(NODE_DIR, tar_ext))
 
     mlog.info("Extracting files from {} to {}",
               tar_path, merge_config['out_dir'])
-    extract_files(tar_path, tar_ext,
-                  os.path.expanduser(merge_config['out_dir']))
+    extract_files(tar_path, tar_ext, merge_config['out_dir_sh'])
 
     mlog.info("Removing {}".format(tar_path))
     os.remove(os.path.expanduser(tar_path))
@@ -110,6 +100,7 @@ def test_get_cron_freq(frequency):
 def test_get_files_between():
     config = {}
     config['out_dir'] = os.path.join(TEST_DIR, NODE_DIR)
+    config['out_dir_sh'] = slurpy_daemon._expand_path(config['out_dir'])
     config['out_file'] = NODE_FMT
 
     start_time = time_generator(START_TIME)()
@@ -135,15 +126,6 @@ def time_generator(time_str):
 def extract_files(tar_filename, ext, dest_path):
     with tarfile.open(tar_filename, mode='r:{}'.format(ext)) as tar:
         tar.extractall(path=dest_path)
-
-
-def read_config(path):
-    config = ConfigParser(interpolation=ExtendedInterpolation())
-
-    with open(os.path.expanduser(path), mode='r') as conf:
-        config.read_file(conf)
-
-    return config
 
 
 def setup_loggers():

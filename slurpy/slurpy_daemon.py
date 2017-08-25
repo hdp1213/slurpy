@@ -9,7 +9,8 @@ from configparser import ConfigParser, ExtendedInterpolation
 
 from datetime import datetime, timedelta
 from os import remove, walk
-from os.path import join as path_join, expanduser, basename, splitext
+from os.path import join as path_join, expanduser, expandvars, \
+                            basename, splitext
 import signal
 from tarfile import open as tar_open
 from time import perf_counter as tick
@@ -60,10 +61,7 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
 
-    config = ConfigParser(interpolation=ExtendedInterpolation())
-
-    with open(expanduser(args.config_file), mode='r') as conf:
-        config.read_file(conf)
+    config = read_config(args.config_file)
 
     log_config = config['Log']
     node_config = config['NodeTrack']
@@ -85,32 +83,29 @@ def main():
     try:
         slurpy.check_node_features(node_config['features'])
     except ValueError as e:
-        nlog.exception("Invalid node feature in {}:",
-                       args.config_file)
+        nlog.exception("Invalid node feature in {}:", args.config_file)
         return INVALID_FEATURE
 
     try:
         slurpy.check_job_properties(job_config['properties'])
     except ValueError as e:
-        jlog.exception("Invalid job property in {}:",
-                       args.config_file)
+        jlog.exception("Invalid job property in {}:", args.config_file)
         return INVALID_PROPERTY
 
     # Process writer/compressor information from config file
     try:
         node_writer = df_writer(node_config['out_format'])
     except KeyError as e:
-        nlog.exception("Invalid node format in {}:",
-                       args.config_file)
+        nlog.exception("Invalid node format in {}:", args.config_file)
         return INVALID_FORMAT
 
     merge_compressor = df_compressor('tar')
 
     # Print frequency information for jobs
-    nlog.info("Running every {} {}",
+    nlog.info("Will run every {} {}",
               node_config['frequency'], node_config['units'])
 
-    mlog.info("Running every {} {}",
+    mlog.info("Will run every {} {}",
               merge_config['frequency'], merge_config['units'])
 
     # Change writers to none if a dry run is specified
@@ -125,23 +120,23 @@ def main():
                   node_config['out_dir'],
                   node_config['out_format'])
 
-        mlog.info("Will compress node files to directory {} using "
-                  "{} compression",
+        mlog.info("Will compress node files to directory {} using {} "
+                  "compression",
                   merge_config['out_dir'],
                   merge_config['out_compression'])
 
     # Assign jobs to scheduler
     scheduler = BlockingScheduler(timezone='Australia/Adelaide')
 
-    scheduler.add_job(node_track, 'cron',
-                      args=[node_config, node_writer],
+    scheduler.add_job(node_track, args=[node_config, node_writer],
                       max_instances=2,
+                      trigger='cron',
                       **get_cron_freq(node_config))
 
-    scheduler.add_job(merge_node, 'cron',
-                      args=[node_config, merge_config,
-                            merge_compressor],
+    scheduler.add_job(merge_node, args=[node_config, merge_config,
+                                        merge_compressor],
                       max_instances=2,
+                      trigger='cron',
                       **get_cron_freq(merge_config))
 
     # Start daemon process
@@ -160,8 +155,7 @@ def node_track(node_config, node_writer):
 
     nlog.debug("Querying took {:.3f} ms", node_time_s*S_TO_MS)
 
-    rnodes_path = path_join(expanduser(node_config['out_dir']),
-                            node_filename)
+    rnodes_path = path_join(node_config['out_dir_sh'], node_filename)
 
     try:
         node_writer(nlog, rnode_df, rnodes_path)
@@ -187,8 +181,7 @@ def merge_node(node_config, merge_config, merge_compressor,
     mlog.debug("Gathering took {:.3f} ms", gather_time_s*S_TO_MS)
 
     tar_filename = start_time.strftime(merge_config['out_file'])
-    tar_path = path_join(expanduser(merge_config['out_dir']),
-                         tar_filename)
+    tar_path = path_join(merge_config['out_dir_sh'], tar_filename)
     tar_compression = merge_config['out_compression']
 
     merge_compressor(mlog, tar_files, tar_path, tar_compression)
@@ -200,8 +193,8 @@ def setup_loggers(args, log_config):
     logging.logThreads = 0
     logging.logProcesses = 0
 
-    log_filename = args.log_file if args.log_file \
-        else log_config['output']
+    log_filename = (_expand_path(args.log_file) if args.log_file
+                    else log_config['output_sh'])
 
     slurpy_logger = logging.getLogger(MAIN_LOG)
     slurpy_logger.setLevel(logging.DEBUG)
@@ -211,8 +204,7 @@ def setup_loggers(args, log_config):
 
     max_bytes = _to_bytes(log_config['max_size'])
 
-    rfh = RotatingFileHandler(filename=expanduser(log_filename),
-                              mode='w',
+    rfh = RotatingFileHandler(filename=log_filename, mode='w',
                               maxBytes=max_bytes,
                               backupCount=log_config.getint('backups'))
     rfh.setLevel(logging.DEBUG)
@@ -228,6 +220,29 @@ def setup_loggers(args, log_config):
 
 def get_slurpyd_logger(logger_name):
     return FormatAdapter(logging.getLogger(logger_name))
+
+
+def read_config(config_file):
+    config = ConfigParser(interpolation=ExtendedInterpolation())
+
+    with open(_expand_path(config_file), mode='r') as conf:
+        config.read_file(conf)
+
+    log_config = config['Log']
+    node_config = config['NodeTrack']
+    merge_config = config['MergeNode']
+    job_config = config['JobOrders']
+
+    log_config['output_sh'] = _expand_path(log_config['output'])
+    node_config['out_dir_sh'] = _expand_path(node_config['out_dir'])
+    merge_config['out_dir_sh'] = _expand_path(merge_config['out_dir'])
+    node_config['out_dir_sh'] = _expand_path(node_config['out_dir'])
+
+    return config
+
+
+def _expand_path(path):
+    return expandvars(expanduser(path))
 
 
 def get_cron_freq(opt_config):
@@ -306,7 +321,7 @@ def make_parser():
 
 
 def get_files_between(start_time, end_time, opt_config):
-    for root, _, files in walk(expanduser(opt_config['out_dir'])):
+    for root, _, files in walk(opt_config['out_dir_sh']):
         for file in sorted(files):
             try:
                 file_time = datetime.strptime(_strip_ext(file),
