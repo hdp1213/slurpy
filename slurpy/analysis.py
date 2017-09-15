@@ -8,7 +8,6 @@ import tarfile
 
 import pandas as pd
 
-ROOT = '/fast/users/a1648400/slurpyd'
 CSV_FORMAT = 'rnodes-%Y%m%d_%H%M%S'
 
 
@@ -16,9 +15,9 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
 
-    file = args.node_file
+    path = args.node_path
     aggregator = slurpy.aggregate.NodeAggregator(r'r[1-4]n[0-9]{2}')
-    aggregate_csv_archive(os.path.join(ROOT, file), aggregator)
+    aggregate_csv_archive(path, aggregator)
 
     return 0
 
@@ -53,11 +52,11 @@ def extract_filename(file_path):
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(description='%(prog)s, a slurpy daemon.')
+    parser = argparse.ArgumentParser(description='%(prog)s, a slurpy tool.')
 
-    parser.add_argument('node_file',
+    parser.add_argument('node_path',
                         type=str,
-                        help='file to analyse')
+                        help='path to file to aggregate')
 
     version_str = '%(prog)s v{}'.format(slurpy.__version__)
     parser.add_argument('--version',
