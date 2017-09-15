@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from configparser import ConfigParser, ExtendedInterpolation
 
 from datetime import datetime, timedelta
+from functools import wraps
 from os import remove, walk
 from os.path import join as path_join, expanduser, expandvars, \
                             basename, splitext
@@ -203,10 +204,11 @@ def setup_loggers(args, log_config):
     stream_fmtr = logging.Formatter(fmt=STREAM_FMT, style='{')
 
     max_bytes = _to_bytes(log_config['max_size'])
+    backups = log_config.getint('backups')
 
     rfh = RotatingFileHandler(filename=log_filename, mode='w',
                               maxBytes=max_bytes,
-                              backupCount=log_config.getint('backups'))
+                              backupCount=backups)
     rfh.setLevel(logging.DEBUG)
     rfh.setFormatter(file_fmtr)
     slurpy_logger.addHandler(rfh)
@@ -348,6 +350,7 @@ def _to_bytes(byte_str):
 
 
 def decorate_writer(_plain_writer):
+    @wraps(_plain_writer)
     def _decorated_writer(log, dataframe, output_path):
         WRITING_FILES.append(output_path)
         write_time_s = tick()
@@ -395,6 +398,7 @@ def _none_writer(log, dataframe, output_path):
 
 
 def decorate_compressor(_plain_compressor):
+    @wraps(_plain_compressor)
     def _decorated_compressor(log, files, output_path, ext, filter):
         COMPRESSING_FILES.append(output_path)
         compress_time_s = tick()
